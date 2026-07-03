@@ -1,0 +1,199 @@
+// Smoke test end-to-end: Nota (upload CSV → parse → generate), PNL, Stok, tema
+const { chromium } = require('playwright');
+const path = require('path');
+const fs = require('fs');
+
+const HTML = require('path').join(__dirname, '..', 'index.html');
+const CSV = require('path').join(__dirname, '..', 'data', 'Products.csv');
+const TEMPLATE = fs.readFileSync(__dirname + '/template.txt', 'utf8').trim();
+
+const results = [];
+function check(name, cond, extra){
+  results.push({ name, ok: !!cond, extra: extra || '' });
+  console.log((cond ? '✓' : '✗') + ' ' + name + (extra ? ' — ' + extra : ''));
+}
+
+(async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(String(e)));
+  page.on('console', msg => {
+    // abaikan kegagalan resource jaringan (font CDN dll) — offline by design
+    if (msg.type() === 'error' && !/Failed to load resource|net::ERR/.test(msg.text())) errors.push(msg.text());
+  });
+
+  await page.goto('file://' + HTML);
+  await page.waitForTimeout(600);
+  check('Halaman termuat tanpa JS error', errors.length === 0, errors.slice(0,2).join(' | '));
+
+  // ── NOTA: upload CSV ──
+  await page.setInputFiles('#nk-csv-file', CSV);
+  await page.waitForTimeout(1200);
+  const dbChip = await page.textContent('#nk-db-chip');
+  check('CSV terupload & tersimpan', /2\.8\d\d produk/.test(dbChip), dbChip);
+
+  // persistensi DB: reload lalu cek chip
+  await page.reload();
+  await page.waitForTimeout(700);
+  const dbChip2 = await page.textContent('#nk-db-chip');
+  check('DB persisten setelah reload', /produk/.test(dbChip2) && !/belum/.test(dbChip2), dbChip2);
+
+  // ── NOTA: parse template 43 baris ──
+  await page.fill('#nk-input', TEMPLATE);
+  await page.click('#nk-parse-btn');
+  await page.waitForTimeout(2500);
+  const rows = await page.$$eval('#nk-table tbody tr', trs => trs.length);
+  check('Tabel review 43 item + total', rows === 44, rows + ' baris');
+  const okChips = await page.$$eval('#nk-table .chip.ok', els => els.length);
+  check('≥30 item hijau otomatis', okChips >= 30, okChips + ' hijau');
+  const grand = await page.textContent('#nk-grand');
+  check('Grand total terhitung', /\d/.test(grand), 'Rp ' + grand);
+
+  // dropdown pilih → kamus belajar
+  await page.click('#nk-table .cd-trigger');
+  await page.waitForTimeout(300);
+  const cdItems = await page.$$('#nk-table .cd-list.open .cd-item');
+  check('Dropdown produk terbuka', cdItems.length > 0, cdItems.length + ' opsi');
+  if (cdItems.length) await cdItems[0].click();
+  await page.waitForTimeout(300);
+  const learnChip = await page.textContent('#nk-learn-chip');
+  check('Kamus belajar bertambah', /kamus: [1-9]/.test(learnChip), learnChip);
+
+  // kalkulator qty
+  await page.click('#nk-table [data-act="qty"]');
+  await page.waitForTimeout(300);
+  const calcOpen = await page.$eval('#g-calc-overlay', el => el.classList.contains('open'));
+  check('Kalkulator qty terbuka (modal)', calcOpen);
+  await page.click('[data-k="5"]');
+  await page.click('[data-k="ok"]');
+  await page.waitForTimeout(300);
+
+  // generate nota
+  await page.click('#nk-generate-btn');
+  await page.waitForTimeout(400);
+  // jika ada konfirmasi item belum dikonfirmasi
+  const confirmVisible = await page.$eval('#g-confirm-overlay', el => el.classList.contains('open'));
+  if (confirmVisible) await page.click('#g-confirm-ok');
+  await page.waitForTimeout(500);
+  const receipt = await page.$('#nk-receipt');
+  check('Nota thermal tergenerate', !!receipt);
+  const notaStatus = await page.textContent('#nk-status');
+  check('Status nota tampil total', /Rp/.test(notaStatus), notaStatus);
+
+  // ── PNL ──
+  await page.click('[data-mod="pnl"]');
+  await page.waitForTimeout(300);
+  await page.click('#pn-mode-b');
+  const modeB = await page.$eval('#pn-mode-b', el => el.classList.contains('active'));
+  check('PNL Mode B bisa diaktifkan (fix P1)', modeB);
+  const pnlData = `#tanggal 1/6/26
+#pengeluaran
+350000 Uang Indah
+#prive
+66200 Belanja
+#cash 5628000 + 190000 saldo
+#receh 21000
+#income 7497200
+#kulakan 5808330
+
+#tanggal 2/6/26
+#cash 4100000
+#receh 15000
+#income 5000000
+#kulakan 3900000`;
+  await page.fill('#pn-raw', pnlData);
+  await page.click('#pn-process-btn');
+  await page.waitForTimeout(600);
+  const pnStatus = await page.textContent('#pn-status');
+  check('PNL memproses 2 hari', /2 hari/.test(pnStatus), pnStatus);
+  // P2: cash 5628000+190000 = 5818000
+  const harian = await page.textContent('#pn-tbl-harian');
+  check('#cash multi-angka dijumlah (fix P2)', harian.includes('5.818.000'), '5.818.000 ada di tabel');
+  const sumCards = await page.$$eval('#pn-sum-cards .sum-card', els => els.length);
+  check('8 kartu ringkasan', sumCards === 8);
+
+  // ── STOK ──
+  await page.click('[data-mod="stok"]');
+  await page.waitForTimeout(300);
+  await page.fill('#sk-new-input', '2 dus Gula Pasir\n1 slp Mie Goreng');
+  await page.click('#sk-add-btn');
+  await page.waitForTimeout(400);
+  const cards = await page.$$('#sk-grid .item-card');
+  check('Stok: 2 item ditambahkan (mode karyawan)', cards.length === 2, cards.length + ' kartu');
+  // centang item pertama → muncul di output
+  await page.click('#sk-grid .item-card .chk');
+  await page.waitForTimeout(400);
+  const out = await page.inputValue('#sk-output');
+  check('Centang → output balasan terisi', out.includes('Gula Pasir'), JSON.stringify(out));
+  // S3: edit output → qty & unit item berubah
+  await page.fill('#sk-output', '5 slp Gula Pasir');
+  await page.dispatchEvent('#sk-output', 'input');
+  await page.waitForTimeout(400);
+  const qd = await page.textContent('#sk-grid .item-card .qty-disp');
+  const ub = await page.textContent('#sk-grid .item-card .unit-btn');
+  check('Edit output → qty item ikut (fix S3)', qd.trim() === '5', 'qty=' + qd.trim());
+  check('Edit output → satuan item ikut (fix S3)', ub.includes('slp'), ub.trim());
+  // S6: minus di qty — set qty 1 dulu via output lalu tekan minus
+  await page.fill('#sk-output', '1 slp Gula Pasir');
+  await page.dispatchEvent('#sk-output', 'input');
+  await page.waitForTimeout(300);
+  await page.click('#sk-grid .item-card .qty-btn');   // tombol pertama = minus
+  await page.waitForTimeout(300);
+  const qd2 = await page.textContent('#sk-grid .item-card .qty-disp');
+  check('Minus di qty 1 → freeze (fix S6)', qd2.trim() === '1', 'qty=' + qd2.trim());
+
+  // gesture 5 tap → PIN muncul
+  for (let i = 0; i < 5; i++){ await page.click('#sk-logo-tap'); await page.waitForTimeout(80); }
+  await page.waitForTimeout(300);
+  const pinOpen = await page.$eval('#sk-pin-overlay', el => el.classList.contains('open'));
+  check('Gesture rahasia 5× tap → layar PIN', pinOpen);
+  const pinTitle = await page.textContent('#sk-pin-title');
+  check('Setup PIN pertama kali', pinTitle.includes('Buat PIN'), pinTitle);
+  // buat PIN 1234 + konfirmasi
+  for (const d of ['1','2','3','4']) await page.click('#sk-pin-grid [data-k="'+d+'"]');
+  await page.waitForTimeout(400);
+  for (const d of ['1','2','3','4']) await page.click('#sk-pin-grid [data-k="'+d+'"]');
+  await page.waitForTimeout(600);
+  const bossBadge = await page.$eval('#sk-mode-badge', el => el.style.display !== 'none');
+  check('Masuk Mode Bos', bossBadge);
+  const catsVisible = await page.$eval('#sk-section-cats', el => el.style.display !== 'none');
+  check('Kategori tampil di Mode Bos', catsVisible);
+  // pastikan storage tidak pernah menyimpan mode boss (aturan keamanan)
+  const storedMode = await page.evaluate(() => JSON.parse(localStorage.getItem('stok-boss-data')||'{}').mode);
+  check('state.mode di storage tetap "worker"', storedMode === 'worker', storedMode);
+
+  // ── TEMA ──
+  await page.click('#g-theme-btn');
+  await page.waitForTimeout(200);
+  const theme1 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  await page.click('#g-theme-btn');
+  await page.waitForTimeout(200);
+  const theme2 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  check('Toggle tema light↔dark (F8)', theme1 !== theme2, theme1 + '→' + theme2);
+
+  // footer signature & about
+  const sig = await page.textContent('.app-footer .sig');
+  check('Signature Fable 5 di footer', sig.includes('Claude Fable'), sig.trim().slice(0,60));
+  await page.click('#g-about-open');
+  await page.waitForTimeout(300);
+  const aboutOpen = await page.$eval('#g-about-overlay', el => el.classList.contains('open'));
+  check('Modal Tentang terbuka', aboutOpen);
+
+  // screenshot dua tema
+  await page.click('.modal-x[data-close="g-about-overlay"]');
+  await page.click('[data-mod="nota"]');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme','light'));
+  await page.screenshot({ path: __dirname + '/shot-light.png', fullPage: false });
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme','dark'));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: __dirname + '/shot-dark.png', fullPage: false });
+
+  check('Tidak ada JS error selama seluruh test', errors.length === 0, errors.slice(0,3).join(' | '));
+
+  const fail = results.filter(r => !r.ok).length;
+  console.log('\nSMOKE: ' + (results.length - fail) + '/' + results.length + ' lulus' + (fail ? ' · ' + fail + ' GAGAL' : ''));
+  await browser.close();
+  process.exit(fail ? 1 : 0);
+})().catch(e => { console.error('FATAL:', e); process.exit(1); });
