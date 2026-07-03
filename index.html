@@ -67,13 +67,16 @@ html[data-theme="dark"]{
   --shadow:0 1px 3px rgba(0,0,0,0.25);
   --shadow-md:0 8px 28px rgba(0,0,0,0.4);
 }
-*{margin:0;padding:0;box-sizing:border-box;}
-html{scroll-behavior:smooth;}
+/* text-size-adjust di SETIAP elemen (tidak diwariskan!) — matikan font-boosting
+   Android, biang "kalkulator mengecil saat ketikan pertama" */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+html{scroll-behavior:smooth;overflow-x:hidden;}
 body{
   background:var(--bg);color:var(--ink);
   font-family:var(--sans);font-size:14px;line-height:1.6;
   min-height:100vh;transition:background .25s,color .25s;
   -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation; /* matikan double-tap zoom → anti missclick */
 }
 ::selection{background:var(--accent-soft);}
 textarea,input,select,button{font-family:inherit;color:inherit;}
@@ -114,6 +117,7 @@ button{cursor:pointer;}
 .module.active{display:block;animation:fadeUp .25s ease;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
 .cols{display:grid;grid-template-columns:1fr 400px;gap:20px;align-items:start;}
+.cols>*{min-width:0;} /* tabel lebar tidak boleh memaksa halaman overflow horizontal */
 @media(max-width:960px){.cols{grid-template-columns:1fr;}}
 
 /* ── PANELS (kartu ala Claude) ── */
@@ -237,6 +241,7 @@ td.strip{width:4px;padding:0;border-radius:3px 0 0 3px;}
   position:fixed;inset:0;z-index:1000;background:rgba(20,19,18,0.5);
   display:none;align-items:center;justify-content:center;padding:20px;
   backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  height:100vh;height:100dvh; /* pusat mengikuti viewport NYATA di HP (URL bar dinamis) */
 }
 .overlay.open{display:flex;}
 .modal{
@@ -253,13 +258,17 @@ td.strip{width:4px;padding:0;border-radius:3px 0 0 3px;}
 .modal-foot{padding:12px 20px 16px;display:flex;gap:8px;justify-content:flex-end;}
 
 /* ── KALKULATOR / NUMPAD MODAL (dipakai Nota & Stok) ── */
-.calc-modal{max-width:280px;overflow:hidden;}
+.calc-modal{
+  width:280px;max-width:calc(100vw - 32px);flex-shrink:0;
+  overflow:hidden;touch-action:manipulation;user-select:none;
+}
 .calc-head{background:var(--ink);color:var(--bg);padding:14px 16px 10px;}
 html[data-theme="dark"] .calc-head{background:#1B1A19;color:var(--ink);}
-.calc-name{font-size:10.5px;font-family:var(--mono);opacity:.65;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.calc-disp{font-family:var(--mono);font-size:30px;font-weight:600;text-align:right;letter-spacing:-1px;min-height:40px;}
-.calc-disp.empty{opacity:.35;}
-.calc-sat{font-size:10.5px;font-family:var(--mono);opacity:.55;text-align:right;min-height:16px;}
+/* tinggi SEMUA elemen display dikunci → imun terhadap font-boosting Android */
+.calc-name{font-size:10.5px;line-height:17px;height:17px;font-family:var(--mono);opacity:.65;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.calc-disp{font-family:var(--mono);font-size:30px;line-height:46px;height:46px;overflow:hidden;font-weight:600;text-align:right;letter-spacing:-1px;white-space:nowrap;}
+.calc-disp.is-zero{opacity:.35;}  /* JANGAN pakai class .empty — bentrok dengan empty-state panel */
+.calc-sat{font-size:10.5px;line-height:16px;height:16px;font-family:var(--mono);opacity:.55;text-align:right;white-space:nowrap;overflow:hidden;}
 .calc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);}
 .calc-btn{
   background:var(--surface);border:none;padding:16px 8px;font-size:17px;
@@ -463,13 +472,78 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
 .about-stat b{display:block;font-family:var(--serif);font-size:17px;color:var(--accent);}
 .about-stat span{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--ink3);text-transform:uppercase;}
 
+/* ── NAVIGASI BAWAH (mobile) ── */
+#g-bottom-nav{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:400;
+  background:color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-top:1px solid var(--border);
+  padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+  grid-template-columns:repeat(3,1fr);gap:4px;
+}
+.bnav-btn{
+  border:none;background:transparent;border-radius:12px;
+  padding:7px 4px 5px;display:flex;flex-direction:column;align-items:center;gap:1px;
+  color:var(--ink3);transition:all .18s;
+}
+.bnav-btn .bnav-ico{font-size:17px;line-height:1.2;}
+.bnav-btn .bnav-lbl{font-size:10px;font-weight:600;letter-spacing:.2px;}
+.bnav-btn.active{color:var(--accent);background:var(--accent-dim);}
+
+/* ── SEEKBAR SCROLL + JUMP (global) ── */
+#g-seek{
+  position:fixed;right:6px;top:50%;transform:translateY(-50%);z-index:350;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  opacity:.92;transition:opacity .2s;
+}
+#g-seek.hide{display:none;}
+.seek-jump{
+  width:30px;height:30px;border-radius:10px;border:1px solid var(--border);
+  background:var(--surface);color:var(--ink3);font-size:13px;line-height:1;
+  display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);
+}
+.seek-jump:active{color:var(--accent);border-color:var(--accent);}
+#g-seek-track{
+  width:14px;height:min(34vh,260px);border-radius:100px;
+  background:var(--bg2);border:1px solid var(--border);
+  position:relative;touch-action:none;cursor:pointer;
+}
+#g-seek-thumb{
+  position:absolute;left:50%;transform:translate(-50%,-50%);top:0%;
+  width:26px;height:34px;border-radius:100px;
+  background:var(--surface);border:1px solid var(--border2);box-shadow:var(--shadow-md);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--ink4);font-size:9px;letter-spacing:-1px;
+  touch-action:none;cursor:grab;user-select:none;
+}
+#g-seek-thumb.dragging{border-color:var(--accent);color:var(--accent);cursor:grabbing;}
+
+/* ── RESPONSIVE MOBILE (≤700px) ── */
+@media(max-width:700px){
+  .topbar-inner{height:52px;}
+  .mod-tabs{display:none;}                 /* tab pindah ke navigasi bawah */
+  #g-bottom-nav{display:grid;}
+  .wrap{padding:14px 10px calc(86px + env(safe-area-inset-bottom));}
+  .app-footer{margin-bottom:8px;padding-bottom:calc(70px + env(safe-area-inset-bottom));}
+  /* font input ≥16px → browser HP tidak auto-zoom (akar bug "kalkulator mengecil") */
+  .inp, textarea.inp, tbody td input.cell-inp, .item-name-input{font-size:16px;}
+  .panel-body{padding:14px 13px;}
+  .panel-head{padding:12px 14px 10px;}
+  .sum-cards{gap:8px;}
+  .nota-side{position:static;}
+  .nota-scroll{max-height:none;}
+  #g-seek{right:3px;}
+  .cd-wrap{min-width:150px;}
+  #toast{bottom:calc(84px + env(safe-area-inset-bottom));}
+}
+
 /* ── PRINT (nota) ── */
 @media print{
   body *{visibility:hidden!important;}
   #nk-print-area, #nk-print-area *{visibility:visible!important;}
   #nk-print-area{position:absolute;left:0;top:0;width:100%;}
   .receipt{box-shadow:none!important;width:100%!important;margin:0!important;}
-  .topbar,.app-footer,#toast{display:none!important;}
+  .topbar,.app-footer,#toast,#g-bottom-nav,#g-seek{display:none!important;}
 }
 </style>
 </head>
@@ -751,6 +825,20 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
   <span class="sig"><span class="spark">✳</span> Dibangun bersama <b>Claude Fable&nbsp;5</b> · Anthropic — Juli 2026</span>
 </div>
 
+<!-- ═══════════════ NAVIGASI BAWAH (mobile) ═══════════════ -->
+<div id="g-bottom-nav">
+  <button class="bnav-btn active" data-mod="nota"><span class="bnav-ico">🧾</span><span class="bnav-lbl">Nota</span></button>
+  <button class="bnav-btn" data-mod="pnl"><span class="bnav-ico">📊</span><span class="bnav-lbl">PNL</span></button>
+  <button class="bnav-btn" data-mod="stok" id="sk-logo-tap-m"><span class="bnav-ico">📦</span><span class="bnav-lbl">Stok</span></button>
+</div>
+
+<!-- ═══════════════ SEEKBAR SCROLL + JUMP ═══════════════ -->
+<div id="g-seek" class="hide">
+  <button class="seek-jump" id="g-seek-top" title="Ke atas">⌃</button>
+  <div id="g-seek-track"><div id="g-seek-thumb">≡</div></div>
+  <button class="seek-jump" id="g-seek-bottom" title="Ke bawah">⌄</button>
+</div>
+
 <div id="toast"></div>
 <div id="nk-print-area" style="display:none;"></div>
 
@@ -759,7 +847,7 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
   <div class="modal calc-modal">
     <div class="calc-head">
       <div class="calc-name" id="g-calc-name">—</div>
-      <div class="calc-disp empty" id="g-calc-disp">0</div>
+      <div class="calc-disp is-zero" id="g-calc-disp">0</div>
       <div class="calc-sat" id="g-calc-sat"></div>
     </div>
     <div class="calc-grid" id="g-calc-grid">
@@ -1090,10 +1178,12 @@ const LS_MOD = 'brk-active-module';
 function switchModule(name){
   document.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
   document.querySelectorAll('.mod-tab').forEach(t => t.classList.toggle('active', t.dataset.mod === name));
+  document.querySelectorAll('.bnav-btn').forEach(t => t.classList.toggle('active', t.dataset.mod === name));
   const mod = $('mod-'+name);
   if (mod) mod.classList.add('active');
   localStorage.setItem(LS_MOD, name);
   if (name === 'stok' && typeof skOnShow === 'function') skOnShow();
+  if (typeof gSeekUpdate === 'function') setTimeout(gSeekUpdate, 60);
 }
 
 // ── KALKULATOR QTY MODAL (bersama Nota & Stok) ──
@@ -1105,12 +1195,12 @@ function openCalc(title, satLabel, currentVal, cb){
   $('g-calc-sat').textContent = satLabel || '';
   const d = $('g-calc-disp');
   d.textContent = currentVal !== '' && currentVal !== undefined ? String(currentVal) : '0';
-  d.className = 'calc-disp empty';
+  d.className = 'calc-disp is-zero';
   $('g-calc-overlay').classList.add('open');
 }
 function calcRender(){
   const d = $('g-calc-disp');
-  if (!_calcVal){ d.textContent = '0'; d.className = 'calc-disp empty'; }
+  if (!_calcVal){ d.textContent = '0'; d.className = 'calc-disp is-zero'; }
   else { d.textContent = _calcVal; d.className = 'calc-disp'; }
 }
 function calcKey(k){
@@ -3559,17 +3649,21 @@ function skOnShow(){ skRenderHeader(); }
 // ── INIT STOK ──
 function skInit(){
   // gesture rahasia: 5× tap tab "Stok Kosong" dalam 2 detik → PIN (anti double-fire)
+  // terpasang di tab atas (desktop) DAN tab navigasi bawah (mobile)
   (function(){
     let taps = 0, timer = null, touched = false;
-    const el = $('sk-logo-tap');
     function onTap(){
       taps++;
       clearTimeout(timer);
       if (taps >= 5){ taps = 0; if (!skIsBoss()) skOpenPin(); }
       else timer = setTimeout(() => { taps = 0; }, 2000);
     }
-    el.addEventListener('touchend', () => { touched = true; onTap(); setTimeout(() => { touched = false; }, 320); });
-    el.addEventListener('click', () => { if (!touched) onTap(); });
+    ['sk-logo-tap','sk-logo-tap-m'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('touchend', () => { touched = true; onTap(); setTimeout(() => { touched = false; }, 320); });
+      el.addEventListener('click', () => { if (!touched) onTap(); });
+    });
   })();
 
   $('sk-add-btn').addEventListener('click', skAddItems);
@@ -3987,6 +4081,69 @@ function restoreAll(file){
 }
 
 /* ═══════════════════════════════════════════════════════
+   SEEKBAR SCROLL + JUMP TO (global, port dari Stok v3.22)
+   Muncul saat halaman ≥ 1.6× tinggi layar. Drag thumb =
+   scroll; ⌃/⌄ = lompat ke atas/bawah.
+   ═══════════════════════════════════════════════════════ */
+let gSeekDragging = false;
+function gSeekMax(){ return Math.max(0, document.documentElement.scrollHeight - window.innerHeight); }
+function gSeekUpdate(){
+  const wrap = $('g-seek');
+  if (!wrap) return;
+  const max = gSeekMax();
+  wrap.classList.toggle('hide', max < window.innerHeight * 0.6);
+  if (!gSeekDragging){
+    const pos = max > 0 ? window.scrollY / max : 0;
+    $('g-seek-thumb').style.top = (pos * 100).toFixed(2) + '%';
+  }
+}
+function gSeekInit(){
+  const track = $('g-seek-track');
+  const thumb = $('g-seek-thumb');
+  window.addEventListener('scroll', gSeekUpdate, { passive:true });
+  window.addEventListener('resize', gSeekUpdate, { passive:true });
+  setTimeout(gSeekUpdate, 300);
+
+  $('g-seek-top').addEventListener('click', () => window.scrollTo({ top:0, behavior:'smooth' }));
+  $('g-seek-bottom').addEventListener('click', () => window.scrollTo({ top:gSeekMax(), behavior:'smooth' }));
+
+  function posFromY(clientY){
+    const r = track.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+  }
+  track.addEventListener('click', e => {
+    if (gSeekDragging) return;
+    window.scrollTo({ top: posFromY(e.clientY) * gSeekMax(), behavior:'smooth' });
+  });
+  function startDrag(clientY){
+    gSeekDragging = true;
+    thumb.classList.add('dragging');
+    const move = cy => {
+      const p = posFromY(cy);
+      thumb.style.top = (p * 100).toFixed(2) + '%';
+      window.scrollTo({ top: p * gSeekMax() });
+    };
+    const mMove = e => move(e.clientY);
+    const tMove = e => { e.preventDefault(); move(e.touches[0].clientY); };
+    const end = () => {
+      gSeekDragging = false;
+      thumb.classList.remove('dragging');
+      document.removeEventListener('mousemove', mMove);
+      document.removeEventListener('mouseup', end);
+      document.removeEventListener('touchmove', tMove);
+      document.removeEventListener('touchend', end);
+    };
+    document.addEventListener('mousemove', mMove);
+    document.addEventListener('mouseup', end);
+    document.addEventListener('touchmove', tMove, { passive:false });
+    document.addEventListener('touchend', end);
+    move(clientY);
+  }
+  thumb.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); startDrag(e.clientY); });
+  thumb.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); startDrag(e.touches[0].clientY); }, { passive:false });
+}
+
+/* ═══════════════════════════════════════════════════════
    INIT GLOBAL — SATU-SATUNYA entry point (aturan wajib)
    ═══════════════════════════════════════════════════════ */
 function initApp(){
@@ -4003,11 +4160,16 @@ function initApp(){
     if (b) setTheme(b.dataset.theme);
   });
 
-  // module tabs
+  // module tabs (atas + navigasi bawah mobile)
   $('g-mod-tabs').addEventListener('click', e => {
     const b = e.target.closest('.mod-tab');
     if (b) switchModule(b.dataset.mod);
   });
+  $('g-bottom-nav').addEventListener('click', e => {
+    const b = e.target.closest('.bnav-btn');
+    if (b) switchModule(b.dataset.mod);
+  });
+  gSeekInit();
 
   // semua tombol ✕ modal — delegation via data-close
   document.querySelectorAll('[data-close]').forEach(b =>
