@@ -163,6 +163,76 @@ function check(name, cond, extra){
   const storedMode = await page.evaluate(() => JSON.parse(localStorage.getItem('stok-boss-data')||'{}').mode);
   check('state.mode di storage tetap "worker"', storedMode === 'worker', storedMode);
 
+  // ── DROPDOWN SEARCH PRODUK (fitur baru) ──
+  await page.click('[data-mod="nota"]');
+  await page.waitForTimeout(300);
+  // baris 38 = "Lilin Popular" (notfound) — dulu input teks polos, sekarang dropdown + search
+  const trigs = await page.$$('#nk-table .cd-trigger');
+  check('Baris notfound juga dapat dropdown', trigs.length === 43, trigs.length + ' dropdown');
+  await trigs[37].click();
+  await page.waitForTimeout(250);
+  const searchInp = await page.$('#nk-table .cd-list.open .cd-search input');
+  check('Kotak search ada di dalam dropdown', !!searchInp);
+  await searchInp.type('lilin');
+  await page.waitForTimeout(350);
+  const resItems = await page.$$('#nk-table .cd-list.open [data-act="cdpick-db"]');
+  check('Search DB memberi hasil', resItems.length > 0, resItems.length + ' hasil utk "lilin"');
+  const learnBefore = await page.textContent('#nk-learn-chip');
+  await resItems[0].click();
+  await page.waitForTimeout(300);
+  const learnAfter = await page.textContent('#nk-learn-chip');
+  check('Pilih dari search → kamus bertambah', learnBefore !== learnAfter, learnBefore + ' → ' + learnAfter);
+
+  // ── ARSIP PNL + DONUT (fitur baru) ──
+  await page.click('[data-mod="pnl"]');
+  await page.waitForTimeout(300);
+  await page.click('.pn-subnav [data-view="arsip"]');
+  await page.waitForTimeout(400);
+  const arsChip = await page.textContent('#ar-count-chip');
+  check('Arsip terisi otomatis dari Proses', /^[1-9]/.test(arsChip.trim()), arsChip);
+  const donutPaths = await page.$$('#ar-donut [data-key]');
+  check('Donut ter-render dengan slice', donutPaths.length >= 2, donutPaths.length + ' slice');
+  const legRows = await page.$$('#ar-legend .ar-leg-row');
+  check('Legend berlabel + nilai', legRows.length >= 2, legRows.length + ' baris');
+  // interaksi: klik legend → detail muncul
+  await legRows[0].click();
+  await page.waitForTimeout(250);
+  const detShow = await page.$eval('#ar-detail', el => el.classList.contains('show'));
+  check('Klik legend → sorot + detail', detShow);
+  await page.click('#ar-legend .ar-leg-row');   // re-query — legend di-render ulang
+  await page.waitForTimeout(200);
+  // search keterangan
+  await page.fill('#ar-search', 'indah');
+  await page.waitForTimeout(400);
+  const arsChip2 = await page.textContent('#ar-count-chip');
+  check('Search keterangan memfilter', arsChip2.trim().startsWith('1 /'), arsChip2);
+  await page.fill('#ar-search', '');
+  await page.waitForTimeout(400);
+  // toggle jenis
+  await page.click('#ar-jenis-seg [data-arj="p"]');
+  await page.waitForTimeout(300);
+  const centerLbl = await page.textContent('#ar-center-lbl');
+  check('Toggle jenis Pengeluaran', /pengeluaran/.test(centerLbl), centerLbl);
+  await page.click('#ar-jenis-seg [data-arj="all"]');
+  // tabel entri
+  const arsRows = await page.$$('#ar-table tbody tr');
+  check('Tabel arsip berisi baris', arsRows.length >= 3, arsRows.length + ' baris');
+
+  // ── SEEKBAR AUTO-COLLAPSE (fitur baru) ──
+  await page.evaluate(() => window.scrollTo(0, 200));
+  await page.waitForTimeout(500);
+  const railBefore = await page.$eval('#g-seek', el => el.classList.contains('rail'));
+  check('Seekbar aktif saat scroll', !railBefore);
+  await page.waitForTimeout(3400);
+  const railAfter = await page.$eval('#g-seek', el => el.classList.contains('rail'));
+  check('Idle 3 dtk → collapse jadi rail', railAfter);
+  const railPE = await page.$eval('#g-seek', el => getComputedStyle(el).pointerEvents);
+  check('Rail tembus klik (pointer-events none)', railPE === 'none', railPE);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400);
+  const railWake = await page.$eval('#g-seek', el => el.classList.contains('rail'));
+  check('Scroll → seekbar bangun lagi', !railWake);
+
   // ── TEMA ──
   await page.click('#g-theme-btn');
   await page.waitForTimeout(200);
