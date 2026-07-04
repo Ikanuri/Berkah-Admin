@@ -44,9 +44,11 @@ node tests/smoke.js
 ## Struktur
 
 ```
-index.html          ← aplikasi lengkap (single file, vanilla JS, tanpa build)
-data/Products.csv   ← contoh export produk Griyo POS (database uji)
-tests/              ← test harness Node + Playwright
+index.html                   ← aplikasi lengkap (single file, vanilla JS, tanpa build)
+data/Products.csv            ← contoh export produk Griyo POS (database uji)
+tests/                       ← test harness Node + Playwright
+docs/DOKUMENTASI-TEKNIS.md   ← arsitektur, mesin pencocokan, aturan wajib, riwayat bug
+docs/PANDUAN-PENGGUNA.md     ← panduan pemakaian lengkap (bahasa santai)
 ```
 
 ---
