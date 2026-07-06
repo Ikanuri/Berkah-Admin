@@ -321,13 +321,23 @@ dalam-app sudah disesuaikan — fix S1).
 - `state.mode` tersimpan selalu `'worker'`; restore stok hanya di Mode Bos;
   import men-sanitasi: default fields, perbaikan `checkedAt`, de-dup ID.
 
+### Filter kategori output (Mode Bos)
+`skState.outCatEx: string[]` — kategori di daftar ini **tidak ikut** teks "Order ke
+Karyawan". UI: chip per kategori di head panel output (`skRenderOutCats`, tampil
+bila bos & ≥2 kategori; chip coret = dikecualikan). Persisten di `stok-boss-data`;
+rename kategori memindahkan entri, hapus kategori membersihkannya; import/sync
+men-default-kan `[]`. Hanya memengaruhi OUTPUT — checklist tetap menampilkan semua.
+
 ### Sinkronisasi output dua arah (bagian paling rawan — baca sebelum edit)
 - `skBuildOutput()`: item tercentang → teks, dikelompokkan per tanggal
-  `checkedAt` (header `── Hari ini ──` hanya jika >1 kelompok & setting show).
+  `checkedAt` (header `── Hari ini ──` hanya jika >1 kelompok & setting show);
+  kategori dalam `outCatEx` dilewati.
 - `skOnOutputChange()` (textarea diedit manual):
   - baris cocok → check + **update qty DAN satuan item + DOM kartu langsung** (fix S3);
   - tidak cocok TAPI item sedang terfilter keluar tanggal → **JANGAN uncheck**
     (bug historis #6);
+  - tidak cocok TAPI kategorinya dikecualikan dari output → **JANGAN uncheck**
+    (perlindungan yang sama);
   - selain itu → uncheck.
   - `skSuppress` mencegah loop saat menulis programatik.
 - Tabel `checkedAt` (kapan di-set/reset) identik dengan spec lama §6 — uncheck lalu

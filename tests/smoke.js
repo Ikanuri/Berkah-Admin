@@ -163,9 +163,52 @@ function check(name, cond, extra){
   const storedMode = await page.evaluate(() => JSON.parse(localStorage.getItem('stok-boss-data')||'{}').mode);
   check('state.mode di storage tetap "worker"', storedMode === 'worker', storedMode);
 
+  // ── FILTER KATEGORI OUTPUT (fitur baru) ──
+  // buat kategori kedua + item tercentang di masing-masing (via state agar cepat)
+  await page.evaluate(() => {
+    skState.cats = ['Umum','Gudang'];
+    skState.items = {
+      Umum:   [{id:makeId(), name:'Gula Pasir', qty:2, unit:'dus', checked:true, checkedAt:Date.now()}],
+      Gudang: [{id:makeId(), name:'Beras Premium', qty:5, unit:'sak', checked:true, checkedAt:Date.now()}],
+    };
+    lsSet('stok-boss-data', skState);
+    skRender(); skSyncOutput();
+  });
+  await page.waitForTimeout(400);
+  const ocChips = await page.$$('#sk-outcat-bar .oc-chip');
+  check('Chip kategori output tampil di Mode Bos', ocChips.length === 2, ocChips.length + ' chip');
+  let outAll = await page.inputValue('#sk-output');
+  check('Semua kategori ikut output (default)', outAll.includes('Gula Pasir') && outAll.includes('Beras Premium'));
+  // kecualikan "Gudang"
+  await page.click('#sk-outcat-bar [data-occat="Gudang"]');
+  await page.waitForTimeout(400);
+  const outEx = await page.inputValue('#sk-output');
+  check('Kategori dikecualikan hilang dari output', outEx.includes('Gula Pasir') && !outEx.includes('Beras Premium'), JSON.stringify(outEx));
+  // edit output → item kategori dikecualikan TIDAK boleh ter-uncheck
+  await page.fill('#sk-output', '3 dus Gula Pasir');
+  await page.dispatchEvent('#sk-output', 'input');
+  await page.waitForTimeout(400);
+  const gudangStillChecked = await page.evaluate(() => skState.items['Gudang'][0].checked === true);
+  check('Item kategori dikecualikan tetap tercentang saat output diedit', gudangStillChecked);
+  // persisten setelah reload (sesi bos masih hidup)
+  await page.reload();
+  await page.waitForTimeout(700);
+  await page.click('[data-mod="stok"]');
+  await page.waitForTimeout(400);
+  const outAfterReload = await page.inputValue('#sk-output');
+  check('Pengecualian kategori persisten', !outAfterReload.includes('Beras Premium') && outAfterReload.includes('Gula Pasir'), JSON.stringify(outAfterReload));
+  // sertakan kembali
+  await page.click('#sk-outcat-bar [data-occat="Gudang"]');
+  await page.waitForTimeout(400);
+  const outBack = await page.inputValue('#sk-output');
+  check('Toggle kembali → item muncul lagi', outBack.includes('Beras Premium'));
+
   // ── DROPDOWN SEARCH PRODUK (fitur baru) ──
   await page.click('[data-mod="nota"]');
   await page.waitForTimeout(300);
+  // reload di seksi stok mengosongkan tabel review (in-memory) — proses ulang dari draft tersimpan
+  await page.click('#nk-parse-btn');
+  await page.waitForTimeout(2500);
   // baris 38 = "Lilin Popular" (notfound) — dulu input teks polos, sekarang dropdown + search
   const trigs = await page.$$('#nk-table .cd-trigger');
   check('Baris notfound juga dapat dropdown', trigs.length === 43, trigs.length + ' dropdown');

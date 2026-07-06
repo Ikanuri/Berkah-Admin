@@ -448,6 +448,17 @@ html[data-theme="dark"] .cat-tab.active{background:var(--ink);color:#262624;}
   background:transparent;color:var(--ink4);font-size:15px;line-height:1;
 }
 .del-btn:hover{background:var(--red-soft);color:var(--red);}
+/* chip filter kategori output (Mode Bos) */
+.oc-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 11px;border-radius:100px;border:1px solid var(--border);
+  background:var(--surface);font-size:11px;font-weight:600;color:var(--ink2);
+  transition:all .15s;cursor:pointer;
+}
+.oc-chip .oc-mark{font-size:10px;color:var(--green);}
+.oc-chip.off{color:var(--ink4);background:var(--surface2);border-style:dashed;text-decoration:line-through;}
+.oc-chip.off .oc-mark{color:var(--ink4);}
+.oc-hint{font-family:var(--mono);font-size:9.5px;color:var(--amber);width:100%;}
 .out-wrap{position:relative;}
 .out-actions{position:absolute;top:8px;right:8px;display:flex;gap:5px;z-index:5;}
 .mini-btn{padding:4px 10px;border-radius:7px;border:1px solid var(--border2);background:var(--surface);font-size:10.5px;font-weight:600;color:var(--ink2);}
@@ -927,7 +938,10 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
 
   <!-- output -->
   <div class="panel" style="margin-top:16px;">
-    <div class="panel-head"><div class="panel-title" id="sk-output-label" style="font-size:14px;">Balasan ke Bos</div></div>
+    <div class="panel-head" style="flex-wrap:wrap;row-gap:8px;">
+      <div class="panel-title" id="sk-output-label" style="font-size:14px;">Balasan ke Bos</div>
+      <div id="sk-outcat-bar" style="display:none;margin-left:auto;gap:5px;flex-wrap:wrap;align-items:center;"></div>
+    </div>
     <div class="panel-body out-wrap">
       <div class="out-actions"><button class="mini-btn" id="sk-copy-btn">Salin</button></div>
       <textarea class="inp" id="sk-output" style="width:100%;min-height:130px;" placeholder="Item tercentang muncul di sini — bisa diedit langsung, dua arah"></textarea>
@@ -3256,6 +3270,9 @@ function skLoadWorker(){
 }
 let skState = skLoadBoss();
 let skWorker = skLoadWorker();
+// filter kategori output — kategori di daftar ini TIDAK ikut "Order ke Karyawan"
+if (!Array.isArray(skState.outCatEx)) skState.outCatEx = [];
+function skCatExcluded(cat){ return skIsBoss() && skState.outCatEx.includes(cat); }
 let skMode = 'worker';
 (function(){
   const exp = parseInt(localStorage.getItem(SK_LS_EXP) || '0');
@@ -3326,7 +3343,10 @@ async function skSha256(str){
 function skBuildOutput(){
   const s = skActive();
   const all = [];
-  s.cats.forEach(c => (s.items[c]||[]).filter(i => i.checked).forEach(i => all.push(i)));
+  s.cats.forEach(c => {
+    if (skCatExcluded(c)) return;   // kategori dikecualikan dari output order
+    (s.items[c]||[]).filter(i => i.checked).forEach(i => all.push(i));
+  });
   const filtered = skFilterPreset === 'all' ? all : all.filter(i => skInRange(i.checkedAt));
   if (!filtered.length) return '';
   const groups = {};
@@ -3389,6 +3409,8 @@ function skOnOutputChange(){
         if (ub) ub.textContent = item.unit + ' ▾';
       } else if (was && skFilterPreset !== 'all' && !skInRange(item.checkedAt)){
         return;   // item terfilter keluar — JANGAN di-uncheck (bug historis #6)
+      } else if (was && skCatExcluded(cat)){
+        return;   // kategori dikecualikan dari output — centangnya jangan disentuh
       } else {
         item.checked = false;
         item.checkedAt = null;
@@ -3420,8 +3442,25 @@ function skRenderHeader(){
   $('sk-output-label').textContent = skIsBoss() ? 'Order ke Karyawan' : 'Balasan ke Bos';
   $('sk-input-label').textContent = skIsBoss() ? ('Tambah Barang — ' + skState.activecat) : 'Input Barang';
   $('g-stok-settings').style.display = skIsBoss() ? '' : 'none';
+  skRenderOutCats();
   skUpdateTimeoutBadge();
   skUpdateCounter();
+}
+// chip pilih kategori yang ikut/dikecualikan di output order (Mode Bos)
+function skRenderOutCats(){
+  const bar = $('sk-outcat-bar');
+  if (!skIsBoss() || skState.cats.length < 2){
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  const nEx = skState.outCatEx.filter(c => skState.cats.includes(c)).length;
+  bar.innerHTML = skState.cats.map(c => {
+    const off = skState.outCatEx.includes(c);
+    return '<button class="oc-chip'+(off?' off':'')+'" data-occat="'+esc(c)+'" ' +
+      'title="'+(off?'Dikecualikan dari order — ketuk untuk sertakan':'Ikut di order — ketuk untuk kecualikan')+'">' +
+      '<span class="oc-mark">'+(off?'✕':'✓')+'</span>'+esc(c)+'</button>';
+  }).join('') + (nEx ? '<span class="oc-hint">⚠ '+nEx+' kategori dikecualikan dari order (centangnya tetap aman)</span>' : '');
 }
 function skUpdateCounter(){
   const s = skActive();     // S2: SELALU state aktif — dulu badge total pakai state bos
@@ -4040,6 +4079,9 @@ function skSubmitCat(){
     skState.items[val] = skState.items[skCatTarget] || [];
     delete skState.items[skCatTarget];
     if (skState.activecat === skCatTarget) skState.activecat = val;
+    // status kecualikan-output ikut nama baru
+    const exi = skState.outCatEx.indexOf(skCatTarget);
+    if (exi >= 0) skState.outCatEx[exi] = val;
   }
   lsSet(SK_LS_KEY, skState);
   $('sk-cat-overlay').classList.remove('open');
@@ -4051,6 +4093,7 @@ function skDeleteCat(){
   skState.cats = rem;
   delete skState.items[skCatTarget];
   if (skState.activecat === skCatTarget) skState.activecat = rem[0];
+  skState.outCatEx = skState.outCatEx.filter(c => c !== skCatTarget);
   lsSet(SK_LS_KEY, skState);
   $('sk-cat-overlay').classList.remove('open');
   skRender();
@@ -4078,6 +4121,7 @@ async function skExportJSON(){
 function skSanitizeImport(d){
   if (!d.log) d.log = '';
   if (!d.reply) d.reply = '';
+  if (!Array.isArray(d.outCatEx)) d.outCatEx = [];
   d.mode = 'worker';
   const seen = new Set();
   d.cats.forEach(cat => {
@@ -4167,6 +4211,20 @@ function skInit(){
   });
   ni.addEventListener('input', function(){
     this.rows = Math.max(1, Math.min(this.value.split('\n').length, 6));
+  });
+
+  // toggle sertakan/kecualikan kategori di output order
+  $('sk-outcat-bar').addEventListener('click', e => {
+    const b = e.target.closest('[data-occat]');
+    if (!b) return;
+    const cat = b.dataset.occat;
+    const i = skState.outCatEx.indexOf(cat);
+    if (i >= 0) skState.outCatEx.splice(i, 1);
+    else skState.outCatEx.push(cat);
+    lsSet(SK_LS_KEY, skState);
+    skRenderOutCats();
+    skSyncOutput();
+    showToast(i >= 0 ? '"'+cat+'" ikut di order' : '"'+cat+'" dikecualikan dari order');
   });
 
   $('sk-output').addEventListener('input', skOnOutputChange);

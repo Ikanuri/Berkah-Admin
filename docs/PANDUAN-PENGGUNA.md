@@ -153,6 +153,10 @@ menunjukkan sisa).
 - **Centang = barang perlu diorder** → otomatis jadi teks "Order ke Karyawan"
   → Salin → kirim WA. (Teksnya juga bisa diedit langsung — dua arah: ubah
   `2 dus` jadi `5 slp` di teks, kartunya ikut berubah.)
+- **Pilih kategori yang ikut order:** di atas kolom Order ada chip per kategori —
+  ketuk untuk kecualikan (jadi tercoret ✕). Item tercentang di kategori itu tidak
+  ikut terkirim ke karyawan, tapi **centangnya tetap aman** dan muncul lagi begitu
+  chip diaktifkan kembali. Cocok untuk kategori internal seperti "Gudang".
 - Balasan karyawan → tempel di "Balasan Karyawan" → **⚙ Proses Balasan**:
   terpenuhi → otomatis un-centang; kurang → qty jadi sisa.
 - Karyawan ambil tanpa app? Un-centang manual → otomatis tercatat di
