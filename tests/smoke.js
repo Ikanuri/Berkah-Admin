@@ -203,6 +203,44 @@ function check(name, cond, extra){
   const outBack = await page.inputValue('#sk-output');
   check('Toggle kembali → item muncul lagi', outBack.includes('Beras Premium'));
 
+  // ── JEJAK AKTIVITAS TERAKHIR (fitur baru) ──
+  const laAfterToggle = await page.textContent('#sk-lastact');
+  check('Baris aktivitas tampil setelah toggle kategori', /kategori.*Gudang.*disertakan/.test(laAfterToggle), laAfterToggle.trim());
+  // toggle centang item → deskripsi "dicentang: nama"
+  await page.click('#sk-grid .item-card .chk');
+  await page.waitForTimeout(300);
+  let laText = await page.textContent('#sk-lastact');
+  check('Toggle centang tercatat di aktivitas', /(dicentang|dibatalkan)/.test(laText), laText.trim());
+  // tambah item → deskripsi "+N baru"
+  await page.fill('#sk-new-input', '3 pak Sabun Cuci');
+  await page.click('#sk-add-btn');
+  await page.waitForTimeout(300);
+  laText = await page.textContent('#sk-lastact');
+  check('Tambah item tercatat di aktivitas', laText.includes('baru'), laText.trim());
+  // hapus item → deskripsi "dihapus: nama"
+  await page.evaluate(() => {
+    const cat = skState.activecat;
+    const item = skState.items[cat].find(i => i.name === 'Sabun Cuci');
+    if (item) skDelete(item.id);
+  });
+  await page.waitForTimeout(300);
+  laText = await page.textContent('#sk-lastact');
+  check('Hapus item tercatat di aktivitas', laText.includes('dihapus: Sabun Cuci'), laText.trim());
+  check('Label sumber data (Bos/Karyawan) tampil', /data Bos/.test(laText), laText.trim());
+  // persisten lintas reload
+  await page.reload();
+  await page.waitForTimeout(700);
+  await page.click('[data-mod="stok"]');
+  await page.waitForTimeout(400);
+  const laAfterReload = await page.textContent('#sk-lastact');
+  check('Aktivitas terakhir persisten setelah reload', laAfterReload.includes('dihapus: Sabun Cuci'), laAfterReload.trim());
+  // banding lokal vs data masuk (dipakai di dialog konfirmasi sync/restore)
+  const compareText = await page.evaluate(() => {
+    const incoming = { lastAct: { ts: Date.now() + 3600000, desc: 'dicentang: Contoh dari device lain' } };
+    return skStokCompareText(incoming);
+  });
+  check('Perbandingan lokal vs masuk berfungsi', compareText.includes('Stok lokal') && compareText.includes('Stok diterima') && compareText.includes('lebih baru'), compareText.replace(/\n/g,' | '));
+
   // ── DROPDOWN SEARCH PRODUK (fitur baru) ──
   await page.click('[data-mod="nota"]');
   await page.waitForTimeout(300);

@@ -388,6 +388,13 @@ html[data-theme="dark"] .sum-card.dark{background:#1B1A19;}
 .ar-del-date:hover{color:var(--red);}
 
 /* ── STOK KOSONG ── */
+.sk-lastact{
+  display:flex;align-items:center;gap:6px;margin:-6px 0 14px;
+  font-family:var(--mono);font-size:11px;color:var(--ink3);
+}
+.sk-lastact .sk-la-dot{width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0;}
+.sk-lastact b{color:var(--ink2);font-weight:600;}
+
 .sk-filterbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
 .sk-flt{padding:5px 13px;border-radius:100px;border:1px solid var(--border);background:var(--surface);font-size:11.5px;font-weight:600;color:var(--ink3);transition:all .15s;}
 .sk-flt.active{background:var(--accent);border-color:var(--accent);color:#fff;}
@@ -896,6 +903,7 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
       <button class="btn sm" id="sk-exit-btn" style="display:none;">Keluar Bos</button>
     </div>
   </div>
+  <div id="sk-lastact" class="sk-lastact" style="display:none;"></div>
 
   <!-- input -->
   <div class="panel">
@@ -1029,7 +1037,7 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
 <div class="overlay" id="g-confirm-overlay">
   <div class="modal" style="max-width:330px;">
     <div class="modal-body" style="padding-top:20px;">
-      <div id="g-confirm-msg" style="font-size:13.5px;line-height:1.6;"></div>
+      <div id="g-confirm-msg" style="font-size:13.5px;line-height:1.6;white-space:pre-line;"></div>
     </div>
     <div class="modal-foot">
       <button class="btn sm" id="g-confirm-cancel">Batal</button>
@@ -1121,7 +1129,7 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
         <div class="mod-checks">
           <label class="mod-check on"><input type="checkbox" id="g-sm-nota" checked><span>Nota Kulakan <small style="color:var(--ink3);">— DB produk, kamus, riwayat</small></span></label>
           <label class="mod-check on"><input type="checkbox" id="g-sm-pnl" checked><span>PNL Analyzer <small style="color:var(--ink3);">— data mentah</small></span></label>
-          <label class="mod-check on"><input type="checkbox" id="g-sm-stok" checked><span>Stok Kosong <small style="color:var(--ink3);">— data bos (butuh Mode Bos)</small></span></label>
+          <label class="mod-check on"><input type="checkbox" id="g-sm-stok" checked><span>Stok Kosong <small style="color:var(--ink3);" id="g-sm-stok-info">— data bos (butuh Mode Bos)</small></span></label>
         </div>
         <button class="btn primary wide" id="g-sync-start-btn">Mulai Kirim</button>
       </div>
@@ -3285,6 +3293,33 @@ function skSave(){
   if (skIsBoss()) lsSet(SK_LS_KEY, skState);
   else lsSet(SK_LS_WORKER, skWorker);
 }
+
+// ── JEJAK AKTIVITAS TERAKHIR ──
+// Konteks utama: saat data di-share/sync antar device, gampang bingung "device
+// mana yang terakhir dipakai?". Setiap aksi mutasi menulis {ts, desc} ke state
+// AKTIF (bos & karyawan punya jejak sendiri, sejalan dengan skActive()).
+function skTrackAct(desc){
+  skActive().lastAct = { ts: Date.now(), desc };
+}
+function skRelTime(ts){
+  if (!ts) return null;
+  const diff = Date.now() - ts;
+  if (diff < 45000) return 'baru saja';
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return min + ' menit lalu';
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr + ' jam lalu';
+  const day = Math.floor(hr / 24);
+  if (day < 7) return day + ' hari lalu';
+  const d = new Date(ts);
+  return d.toLocaleDateString('id-ID',{day:'numeric',month:'short'}) + ' ' +
+    d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+}
+// dipakai juga saat konfirmasi sync/restore — bandingkan data lokal vs masuk
+function skActLine(lastAct){
+  if (!lastAct || !lastAct.ts) return 'tidak diketahui kapan';
+  return skRelTime(lastAct.ts) + (lastAct.desc ? ' — ' + lastAct.desc : '');
+}
 let skSuppress = false;
 let skSearch = '';
 let skFilterPreset = 'all', skFilterFrom = null, skFilterTo = null;
@@ -3393,10 +3428,11 @@ function skOnOutputChange(){
     const p = skParseLine(l);
     if (p && p.name) parsed[skNorm(p.name)] = { qty:p.qty, unit:p.unit };
   });
+  let nChanged = 0;
   s.cats.forEach(cat => {
     (s.items[cat]||[]).forEach(item => {
       const m = parsed[skNorm(item.name)];
-      const was = item.checked;
+      const was = item.checked, wasQty = item.qty, wasUnit = item.unit;
       if (m){
         item.checked = true;
         item.qty = m.qty;
@@ -3416,9 +3452,12 @@ function skOnOutputChange(){
         item.checkedAt = null;
       }
       if (was !== item.checked) skSyncCard(item.id, item.checked);
+      if (was !== item.checked || wasQty !== item.qty || wasUnit !== item.unit) nChanged++;
     });
   });
+  if (nChanged) skTrackAct('diedit lewat teks output ('+nChanged+' item berubah)');
   skUpdateCounter();
+  if (nChanged) skRenderLastAct();
   skSave();
 }
 
@@ -3430,8 +3469,18 @@ function skRender(){
   skRenderOutputBoxes();
   skUpdateHints();
 }
+function skRenderLastAct(){
+  const el = $('sk-lastact');
+  const act = skActive().lastAct;
+  if (!act){ el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = '<span class="sk-la-dot"></span>Diubah <b>'+esc(skRelTime(act.ts))+'</b>' +
+    (act.desc ? ' — ' + esc(act.desc) : '') +
+    (skIsBoss() ? ' <span style="color:var(--ink4);">· data Bos</span>' : ' <span style="color:var(--ink4);">· data Karyawan</span>');
+}
 function skRenderHeader(){
   $('sk-date-lbl').textContent = new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'short',year:'numeric'});
+  skRenderLastAct();
   $('sk-mode-badge').style.display = skIsBoss() ? '' : 'none';
   $('sk-exit-btn').style.display = skIsBoss() ? '' : 'none';
   $('sk-section-cats').style.display = skIsBoss() ? '' : 'none';
@@ -3749,9 +3798,11 @@ function skToggle(id){
   item.checked = !item.checked;
   item.checkedAt = item.checked ? Date.now() : null;
   if (skIsBoss() && was && !item.checked) skAppendLog(item);
+  skTrackAct((item.checked ? 'dicentang: ' : 'dibatalkan: ') + item.name);
   skSave();
   skSyncCard(id, item.checked);
   skUpdateCounter();
+  skRenderLastAct();
   skSyncOutput();
 }
 function skSyncCard(id, checked){
@@ -3792,7 +3843,9 @@ function skAdjustQty(id, delta){
   item.qty = parseFloat(v.toFixed(3));
   const d = $('sk-qd-'+id);
   if (d) d.textContent = fmtQty(item.qty);
+  skTrackAct('qty diubah: '+item.name+' → '+fmtQty(item.qty)+' '+item.unit);
   skSave();
+  skRenderLastAct();
   if (item.checked) skSyncOutput();
 }
 function skSetQty(id, val){
@@ -3801,7 +3854,9 @@ function skSetQty(id, val){
   item.qty = parseFloat(Number(val).toFixed(3));
   const d = $('sk-qd-'+id);
   if (d) d.textContent = fmtQty(item.qty);
+  skTrackAct('qty diubah: '+item.name+' → '+fmtQty(item.qty)+' '+item.unit);
   skSave();
+  skRenderLastAct();
   if (item.checked) skSyncOutput();
 }
 function skSetUnit(id, unit){
@@ -3810,16 +3865,21 @@ function skSetUnit(id, unit){
   item.unit = unit;
   const b = $('sk-ub-'+id);
   if (b) b.textContent = unit + ' ▾';
+  skTrackAct('satuan diubah: '+item.name+' → '+unit);
   skSave();
+  skRenderLastAct();
   if (item.checked) skSyncOutput();
 }
 function skDelete(id){
   const cat = skFindCat(id);
   if (!cat) return;
   const s = skActive();
+  const item = s.items[cat].find(i => i.id === id);
   s.items[cat] = s.items[cat].filter(i => i.id !== id);
+  if (item) skTrackAct('dihapus: ' + item.name);
   skSave();
   skRenderChecklist();
+  skRenderLastAct();
   skSyncOutput();
 }
 function skStartRename(id, nameEl){
@@ -3843,9 +3903,11 @@ function skFinishRename(id, inp, nameEl){
   if (!item){ inp.remove(); return; }
   const v = inp.value.trim();
   if (v && v !== item.name){
+    const old = item.name;
     item.name = v;
     nameEl.textContent = v; nameEl.title = v;
-    skSave(); skSyncOutput();
+    skTrackAct('diganti nama: '+old+' → '+v);
+    skSave(); skRenderLastAct(); skSyncOutput();
     showToast('Nama diperbarui');
   } else nameEl.textContent = item.name;
   if (inp.parentNode) inp.replaceWith(nameEl);
@@ -3883,13 +3945,15 @@ function skAddItems(){
     }
   });
   s.items[s.activecat] = arr;
-  skSave();
-  inp.value = ''; inp.rows = 1;
-  skRenderChecklist();
-  skSyncOutput();
   const parts = [];
   if (added) parts.push('+'+added+' baru');
   if (updated) parts.push(updated+' diperbarui');
+  if (parts.length) skTrackAct(parts.join(', ')+' ('+s.activecat+')');
+  skSave();
+  inp.value = ''; inp.rows = 1;
+  skRenderChecklist();
+  skRenderLastAct();
+  skSyncOutput();
   if (parts.length) showToast(parts.join(' · '));
 }
 function skAppendLog(item){
@@ -3923,12 +3987,14 @@ function skProcessReply(){
       }
     });
   });
-  lsSet(SK_LS_KEY, skState);
-  skRenderChecklist();
-  skSyncOutput();
   const parts = [];
   if (resolved) parts.push(resolved+' terpenuhi ✓');
   if (partial) parts.push(partial+' kurang');
+  if (parts.length) skTrackAct('balasan diproses: '+parts.join(', '));
+  lsSet(SK_LS_KEY, skState);
+  skRenderChecklist();
+  skRenderLastAct();
+  skSyncOutput();
   showToast(parts.join(' · ') || 'Tidak ada yang cocok');
 }
 function skCopyText(val, okMsg){
@@ -4072,6 +4138,7 @@ function skSubmitCat(){
     skState.cats.push(val);
     skState.items[val] = [];
     skState.activecat = val;
+    skTrackAct('kategori ditambah: '+val);
   } else if (val !== skCatTarget){
     if (skState.cats.includes(val)){ err.textContent = 'Nama sudah dipakai!'; return; }
     const idx = skState.cats.indexOf(skCatTarget);
@@ -4082,6 +4149,7 @@ function skSubmitCat(){
     // status kecualikan-output ikut nama baru
     const exi = skState.outCatEx.indexOf(skCatTarget);
     if (exi >= 0) skState.outCatEx[exi] = val;
+    skTrackAct('kategori diganti nama: '+skCatTarget+' → '+val);
   }
   lsSet(SK_LS_KEY, skState);
   $('sk-cat-overlay').classList.remove('open');
@@ -4094,6 +4162,7 @@ function skDeleteCat(){
   delete skState.items[skCatTarget];
   if (skState.activecat === skCatTarget) skState.activecat = rem[0];
   skState.outCatEx = skState.outCatEx.filter(c => c !== skCatTarget);
+  skTrackAct('kategori dihapus: '+skCatTarget);
   lsSet(SK_LS_KEY, skState);
   $('sk-cat-overlay').classList.remove('open');
   skRender();
@@ -4221,8 +4290,10 @@ function skInit(){
     const i = skState.outCatEx.indexOf(cat);
     if (i >= 0) skState.outCatEx.splice(i, 1);
     else skState.outCatEx.push(cat);
+    skTrackAct('kategori "'+cat+'" '+(i >= 0 ? 'disertakan di' : 'dikecualikan dari')+' order');
     lsSet(SK_LS_KEY, skState);
     skRenderOutCats();
+    skRenderLastAct();
     skSyncOutput();
     showToast(i >= 0 ? '"'+cat+'" ikut di order' : '"'+cat+'" dikecualikan dari order');
   });
@@ -4277,7 +4348,8 @@ function skInit(){
     showConfirm('Reset semua centang?', 'Reset', false, () => {
       const s = skActive();
       s.cats.forEach(c => (s.items[c]||[]).forEach(i => { i.checked = false; i.checkedAt = null; }));
-      skSave(); skRenderChecklist(); skSyncOutput();
+      skTrackAct('reset semua centang');
+      skSave(); skRenderChecklist(); skRenderLastAct(); skSyncOutput();
       showToast('Semua centang direset');
     });
   });
@@ -4285,7 +4357,8 @@ function skInit(){
     showConfirm('Hapus semua item dari daftar? Tidak bisa dibatalkan.', 'Hapus', true, () => {
       const s = skActive();
       s.cats.forEach(c => { s.items[c] = []; });
-      skSave(); skClearSearch(); skSyncOutput();
+      skTrackAct('semua item dihapus');
+      skSave(); skClearSearch(); skRenderLastAct(); skSyncOutput();
       showToast('Semua item dihapus');
     });
   });
@@ -4405,7 +4478,10 @@ function skInit(){
 
   skRender();
   if (skIsBoss()) skResetTimer();
-  setInterval(() => { if (skIsBoss()) skUpdateTimeoutBadge(); }, 60000);
+  setInterval(() => {
+    if (skIsBoss()) skUpdateTimeoutBadge();
+    skRenderLastAct();   // teks relatif ("3 menit lalu") perlu tick berkala
+  }, 60000);
 }
 function skRenderSettingSegs(){
   document.querySelectorAll('#sk-timeout-seg .seg-opt').forEach(b =>
@@ -4498,6 +4574,18 @@ function applySyncPayload(msg){
   }
   return applied;
 }
+// Bandingkan jejak aktivitas stok lokal vs yang masuk — konteks utama saat
+// sync/restore agar user tahu device mana yang datanya lebih baru.
+function skStokCompareText(incomingBoss){
+  const localLine = skActLine(skState.lastAct);
+  const incomingLine = skActLine(incomingBoss && incomingBoss.lastAct);
+  let verdict = '';
+  if (skState.lastAct && incomingBoss && incomingBoss.lastAct){
+    if (incomingBoss.lastAct.ts > skState.lastAct.ts) verdict = '\n→ Data yang diterima lebih baru dari data lokal.';
+    else if (incomingBoss.lastAct.ts < skState.lastAct.ts) verdict = '\n→ Data lokal lebih baru — hati-hati menimpa.';
+  }
+  return '\n\n📍 Stok lokal: '+localLine+'\n📥 Stok diterima: '+incomingLine+verdict;
+}
 // legacy: terima juga payload 'stok-sync' dari app Stok Kosong lama
 function applyLegacyStokPayload(msg){
   if (!msg.data || !msg.data.cats || !msg.data.items) return null;
@@ -4568,7 +4656,10 @@ function syncConnect(){
           else throw new Error('format tidak dikenal');
           $('g-sync-client-overlay').classList.remove('open');
           const modList = msg.type === 'berkah-sync' ? Object.keys(msg.modules||{}).join(', ') : 'Stok (app lama)';
-          showConfirm('Terima data ('+modList+') dari device lain? Data lokal modul tersebut akan ditimpa.', 'Terapkan', false, () => {
+          const incomingStok = msg.type === 'berkah-sync' ? (msg.modules && msg.modules.stok && msg.modules.stok.boss) : msg.data;
+          let confirmMsg = 'Terima data ('+modList+') dari device lain? Data lokal modul tersebut akan ditimpa.';
+          if (incomingStok) confirmMsg += skStokCompareText(incomingStok);
+          showConfirm(confirmMsg, 'Terapkan', false, () => {
             const applied = pending();
             showToast(applied && applied.length ? '✓ Diterima: ' + applied.join(', ') : 'Tidak ada yang diterapkan');
           });
@@ -4626,7 +4717,9 @@ function restoreAll(file){
     try {
       const d = JSON.parse(ev.target.result);
       if (d.app !== 'berkah-aio') throw new Error();
-      showConfirm('Restore backup gabungan? Data lokal semua modul akan ditimpa. (Stok butuh Mode Bos)', 'Restore', true, () => {
+      let confirmMsg = 'Restore backup gabungan? Data lokal semua modul akan ditimpa. (Stok butuh Mode Bos)';
+      if (d.stok && d.stok.boss) confirmMsg += skStokCompareText(d.stok.boss);
+      showConfirm(confirmMsg, 'Restore', true, () => {
         const applied = applySyncPayload({ modules: {
           nota: d.nota, pnl: d.pnl,
           stok: skIsBoss() ? d.stok : undefined,
@@ -4783,6 +4876,11 @@ function initApp(){
     $('g-sync-modpick').style.display = '';
     $('g-sync-hostinfo').style.display = 'none';
     $('g-sm-stok').checked = skIsBoss();
+    // tampilkan aktivitas terakhir data stok DI DEVICE INI — bantu user
+    // memastikan device ini memang yang mau dikirim
+    $('g-sm-stok-info').textContent = skIsBoss()
+      ? '— diubah ' + skActLine(skState.lastAct)
+      : '— data bos (butuh Mode Bos)';
     $('g-sync-host-overlay').classList.add('open');
   });
   $('g-sync-client-btn').addEventListener('click', () => {

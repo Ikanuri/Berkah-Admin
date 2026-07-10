@@ -136,6 +136,12 @@ Setiap kali Anda tekan Proses Data, semua baris `#pengeluaran` dan `#prive`
 Checklist barang kosong dengan dua peran. **Data dari app Stok Kosong lama Anda
 otomatis terbaca.**
 
+> 🕓 Di bawah header selalu ada baris kecil **"Diubah X yang lalu — [aktivitas]"**
+> (mis. *"Diubah 3 menit lalu — dicentang: Gula Pasir"*). Ini jejak aktivitas
+> terakhir di HP yang sedang Anda pegang — berguna banget saat pindah-pindah HP
+> lewat 📡 Kirim/Terima, supaya tidak bingung lagi **HP mana yang datanya paling
+> baru**. Lihat bagian Pengaturan di bawah untuk perbandingan lengkapnya.
+
 ### Mode Karyawan (tampilan default)
 1. Terima teks order dari Bos → salin.
 2. Tempel di "Input Barang" → **+ Tambah**. Item masuk **tanpa centang**.
@@ -173,8 +179,18 @@ menunjukkan sisa).
 | Fitur | Keterangan |
 |---|---|
 | **Tema** | Terang / Gelap / ikut Sistem — tombol ◐ untuk toggle cepat |
-| **📡 Kirim / 📥 Terima** | Pindahkan data antar HP tanpa file: pengirim pilih modul → dapat kode 6 huruf + QR → penerima masukkan kode. Butuh internet sebentar untuk "berjabat tangan", data mengalir langsung antar device. Kirim data Stok butuh Mode Bos. |
+| **📡 Kirim / 📥 Terima** | Pindahkan data antar HP tanpa file: pengirim pilih modul → dapat kode 6 huruf + QR → penerima masukkan kode. Butuh internet sebentar untuk "berjabat tangan", data mengalir langsung antar device. Kirim data Stok butuh Mode Bos. Sebelum kirim, centang Stok menunjukkan aktivitas terakhir HP ini. |
 | **⬇ Export / ⬆ Restore** | **Backup gabungan** satu file JSON berisi SEMUA (database, kamus, riwayat, PNL+arsip, stok). Lakukan rutin! Restore bagian stok butuh Mode Bos. |
+
+> 🔍 **Bingung HP mana yang lebih baru?** Saat menerima data Stok (via Kirim/Terima
+> maupun Restore), aplikasi menampilkan perbandingan sebelum menimpa apapun:
+> ```
+> 📍 Stok lokal: 40 menit lalu — dicentang: Gula Pasir
+> 📥 Stok diterima: 5 menit lalu — ditambahkan: 3 item (Gudang)
+> → Data yang diterima lebih baru dari data lokal.
+> ```
+> Anda tetap yang memutuskan — tekan Batal kalau ternyata data lokal Andalah
+> yang benar.
 | **📖 Kamus** | Lihat/hapus hafalan pencocokan produk |
 | **Stok (Mode Bos)** | Ganti PIN · backup/restore khusus stok · timeout · tampilan filter |
 | **✳ Fable 5** | Tentang aplikasi |

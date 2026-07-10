@@ -128,8 +128,8 @@ Setiap aturan lahir dari bug nyata (lihat §12):
 | `brk-pnl-mode` | PNL | `'A' \| 'B'` |
 | `brk-pnl-start` | PNL | tanggal mulai Mode A |
 | `brk-pnl-arsip` | PNL | `{ 'YYYY-MM-DD': [{j:'p'\|'v', amt:Number, ket:String}] }` |
-| `stok-boss-data` | Stok | state bos **(key WARISAN app lama — jangan ganti, zero-migration)** |
-| `stok-worker-data` | Stok | state karyawan |
+| `stok-boss-data` | Stok | state bos **(key WARISAN app lama — jangan ganti, zero-migration)**. Field baru: `outCatEx: string[]` (§8), `lastAct: {ts, desc}` (§8) |
+| `stok-worker-data` | Stok | state karyawan. Field baru: `lastAct: {ts, desc}` (§8) |
 | `stok-pin` | Stok | SHA-256 hex PIN |
 | `stok-ver` | Stok | versi skema (`'7'`) — mismatch → PIN **dan** sesi bos dihapus |
 | `stok-boss-exp` | Stok | epoch ms kedaluwarsa sesi bos |
@@ -355,6 +355,38 @@ Balasan karyawan qty ≥ order → uncheck; kurang → tetap checked, qty = sisa
 `checkedAt` refresh. Uncheck manual oleh bos → baris masuk **Log Diambil**
 (editable).
 
+### Jejak aktivitas terakhir
+Motivasi: dengan dua state (bos/karyawan) yang bisa saling sync antar beberapa
+HP, mudah bingung *"data di HP mana yang terakhir saya pakai?"*. Setiap state
+(`skState` dan `skWorker`, terpisah) menyimpan:
+```js
+lastAct: { ts: Number /*epoch ms*/, desc: String }
+```
+- `skTrackAct(desc)` menulis ke `skActive().lastAct` — dipanggil di **setiap**
+  fungsi mutasi: `skToggle`, `skAdjustQty`/`skSetQty`, `skSetUnit`, `skDelete`,
+  `skFinishRename`, `skAddItems`, `skProcessReply`, `skSubmitCat`/`skDeleteCat`,
+  toggle chip `outCatEx`, reset-centang, hapus-semua-item, dan
+  `skOnOutputChange` (hanya jika minimal satu item benar-benar berubah —
+  dihitung via `nChanged`, bukan setiap keystroke).
+- `skRelTime(ts)` → teks relatif (`baru saja` / `N menit lalu` / `N jam lalu` /
+  `N hari lalu` / tanggal lengkap setelah 7 hari). `skRenderLastAct()` menulis
+  baris `#sk-lastact` di header modul, memuat label sumber (`data Bos` /
+  `data Karyawan`). Baris di-tick ulang tiap 60 detik (interval yang sama dengan
+  badge timeout) supaya teks relatif tidak basi tanpa aksi baru.
+- **Konteks sync/restore** (nilai utama fitur ini): `skActLine(lastAct)` format
+  siap-tampil; `skStokCompareText(incomingBoss)` (di `part-08-sync.js`)
+  membandingkan `skState.lastAct` lokal vs `lastAct` yang masuk, menyimpulkan
+  mana yang lebih baru, dan disisipkan ke pesan `showConfirm` (dialog client
+  sync & `restoreAll`) — lihat §9. Modal Kirim juga menampilkan aktivitas
+  terakhir device pengirim sendiri di checkbox Stok sebelum kode dibuat.
+- `showConfirm`'s `#g-confirm-msg` memakai `white-space:pre-line` (bukan HTML)
+  supaya `\n` di teks perbandingan tampil sebagai baris baru tanpa membuka
+  celah XSS — tetap `textContent`, bukan `innerHTML`.
+- Field opsional & backward-compatible: state lama tanpa `lastAct` → baris
+  header tersembunyi (`display:none`) sampai aksi pertama terjadi;
+  `skSanitizeImport` tidak perlu mengisi default karena renderer sudah
+  meng-guard `if (!act)`.
+
 ---
 
 ## 9. Fitur Global: Tema, Sync, Backup, Seekbar
@@ -379,11 +411,19 @@ di markup/JS UI.
   `applySyncPayload` (arsip di-merge per tanggal; stok disanitasi seperti import).
 - **Kompatibilitas mundur**: payload `{type:'stok-sync', data}` dari app Stok
   Kosong lama tetap diterima.
+- **Perbandingan aktivitas Stok** (§8): dialog konfirmasi penerima menyisipkan
+  `skStokCompareText(incomingBoss)` — dua baris "Stok lokal" vs "Stok diterima"
+  (`skActLine`, relative-time + deskripsi) plus simpulan mana yang lebih baru
+  berdasar `lastAct.ts`. Berlaku di jalur `berkah-sync` maupun legacy
+  `stok-sync`, dan di `restoreAll`. Modal Kirim (host) menampilkan aktivitas
+  device-nya sendiri di checkbox Stok sebelum kode dibuat, supaya pengirim tahu
+  data apa yang akan terkirim.
 
 ### Backup gabungan
 File `berkah-DD-MM-YY.json`: `{app:'berkah-aio', version:1, exported, nota, pnl
 (termasuk arsip), stok:{boss, mode:'worker'}}`. Export via Web Share (fallback
-unduh). Restore memakai jalur `applySyncPayload`; bagian stok butuh Mode Bos.
+unduh). Restore memakai jalur `applySyncPayload`; bagian stok butuh Mode Bos;
+dialog konfirmasi menampilkan perbandingan `lastAct` yang sama seperti sync.
 
 ### Seekbar scroll + jump
 Fixed kanan-tengah: tombol ⌃, track drag (pointer/touch), tombol ⌄. Sembunyi bila
