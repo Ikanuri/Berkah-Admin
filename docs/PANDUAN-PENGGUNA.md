@@ -147,6 +147,9 @@ otomatis terbaca.**
 2. Tempel di "Input Barang" → **+ Tambah**. Item masuk **tanpa centang**.
 3. Barang yang **sudah diambil → centang**. Jumlah kurang dari order? Ubah qty
    ke yang benar-benar diambil, tetap centang.
+   > 💡 Semua barang berhasil diambil, tidak ada yang kurang? Scroll ke bawah,
+   > ketuk **☑ Centang Semua** — sekali tap semua barang tercentang, tidak perlu
+   > satu-satu.
 4. Kolom **"Balasan ke Bos"** otomatis berisi semua yang tercentang → Salin →
    kirim ke Bos.
 5. Selesai semua → **🗑 Hapus Semua Item**.
@@ -163,6 +166,13 @@ menunjukkan sisa).
   ketuk untuk kecualikan (jadi tercoret ✕). Item tercentang di kategori itu tidak
   ikut terkirim ke karyawan, tapi **centangnya tetap aman** dan muncul lagi begitu
   chip diaktifkan kembali. Cocok untuk kategori internal seperti "Gudang".
+- **Centang cepat per kategori:** di sebelah tulisan "X dari Y dicentang" ada dua
+  tombol kecil — **☑ Semua** (centang semua barang di kategori yang sedang
+  dibuka) dan **✕ Semua** (batalkan semua). Hanya memengaruhi kategori yang
+  aktif — kategori lain tidak ikut berubah. Cocok untuk "seluruh Sembako habis,
+  perlu order semua" tanpa mencentang satu-satu. Untuk menandai **seluruh**
+  barang di **semua** kategori sekaligus, pakai **☑ Centang Semua** di bagian
+  paling bawah.
 - Balasan karyawan → tempel di "Balasan Karyawan" → **⚙ Proses Balasan**:
   terpenuhi → otomatis un-centang; kurang → qty jadi sisa.
 - Karyawan ambil tanpa app? Un-centang manual → otomatis tercatat di

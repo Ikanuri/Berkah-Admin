@@ -241,6 +241,65 @@ function check(name, cond, extra){
   });
   check('Perbandingan lokal vs masuk berfungsi', compareText.includes('Stok lokal') && compareText.includes('Stok diterima') && compareText.includes('lebih baru'), compareText.replace(/\n/g,' | '));
 
+  // ── CENTANG SEMUA — GLOBAL & PER-KATEGORI (fitur baru) ──
+  await page.evaluate(() => {
+    skState.cats = ['Umum','Gudang'];
+    skState.activecat = 'Umum';
+    skState.items = {
+      Umum: [
+        { id:'x1', name:'Gula Pasir', qty:2, unit:'dus', checked:false, checkedAt:null },
+        { id:'x2', name:'Minyak Goreng', qty:1, unit:'dus', checked:false, checkedAt:null },
+        { id:'x3', name:'Kecap', qty:3, unit:'biji', checked:true, checkedAt:Date.now() },
+      ],
+      Gudang: [ { id:'y1', name:'Rak Besi', qty:1, unit:'biji', checked:false, checkedAt:null } ],
+    };
+    lsSet('stok-boss-data', skState);
+    skRender(); skSyncOutput();
+  });
+  await page.waitForTimeout(400);
+  const catBtns = await page.$$('#sk-counter [data-catall]');
+  check('Mini-tombol per-kategori tampil (Bos, >1 item)', catBtns.length === 2, catBtns.length + ' tombol');
+  const checkBtnDisabled1 = await page.$eval('#sk-counter [data-catall="check"]', el => el.disabled);
+  const uncheckBtnDisabled1 = await page.$eval('#sk-counter [data-catall="uncheck"]', el => el.disabled);
+  check('Kedua tombol aktif saat state campuran (1/3 dicentang)', !checkBtnDisabled1 && !uncheckBtnDisabled1);
+  // klik "Semua" (check) → hanya kategori Umum yang berubah, Gudang tidak tersentuh
+  await page.click('#sk-counter [data-catall="check"]');
+  await page.waitForTimeout(300);
+  const umumAllChecked = await page.evaluate(() => skState.items.Umum.every(i => i.checked));
+  const gudangUntouched1 = await page.evaluate(() => skState.items.Gudang[0].checked === false);
+  check('Centang-semua per kategori: Umum semua tercentang', umumAllChecked);
+  check('Centang-semua per kategori TIDAK menyentuh kategori lain', gudangUntouched1);
+  const checkBtnDisabled2 = await page.$eval('#sk-counter [data-catall="check"]', el => el.disabled);
+  check('Tombol "Semua" nonaktif setelah semua tercentang', checkBtnDisabled2);
+  // klik "Batal" (uncheck) → Umum kembali kosong, Gudang tetap tak tersentuh
+  await page.click('#sk-counter [data-catall="uncheck"]');
+  await page.waitForTimeout(300);
+  const umumAllUnchecked = await page.evaluate(() => skState.items.Umum.every(i => !i.checked));
+  const gudangUntouched2 = await page.evaluate(() => skState.items.Gudang[0].checked === false);
+  check('Batalkan-semua per kategori: Umum semua batal', umumAllUnchecked);
+  check('Batalkan-semua per kategori TIDAK menyentuh kategori lain', gudangUntouched2);
+
+  // tombol global "Centang Semua" — memengaruhi SEMUA kategori sekaligus
+  const globalBtnVisibleBoss = await page.$eval('#sk-check-all', el => getComputedStyle(el).display !== 'none');
+  check('Tombol global Centang Semua tampil (Mode Bos)', globalBtnVisibleBoss);
+  await page.click('#sk-check-all');
+  await page.waitForTimeout(300);
+  await page.click('#g-confirm-ok');   // konfirmasi "Centang semua item di semua kategori?"
+  await page.waitForTimeout(400);
+  const allCheckedGlobal = await page.evaluate(() =>
+    skState.items.Umum.every(i => i.checked) && skState.items.Gudang.every(i => i.checked));
+  check('Centang Semua (global) menjangkau SEMUA kategori', allCheckedGlobal);
+  const laGlobalCheck = await page.textContent('#sk-lastact');
+  check('Centang Semua (global) tercatat di aktivitas', laGlobalCheck.includes('centang semua item'), laGlobalCheck.trim());
+
+  // tombol global juga tampil di Mode Karyawan
+  await page.click('#sk-exit-btn');
+  await page.waitForTimeout(400);
+  const globalBtnVisibleWorker = await page.$eval('#sk-check-all', el => getComputedStyle(el).display !== 'none');
+  check('Tombol global Centang Semua tampil (Mode Karyawan)', globalBtnVisibleWorker);
+  const catBtnsWorker = await page.$$('#sk-counter [data-catall]');
+  check('Mini-tombol per-kategori TIDAK tampil di Mode Karyawan', catBtnsWorker.length === 0, catBtnsWorker.length + ' tombol');
+
   // ── DROPDOWN SEARCH PRODUK (fitur baru) ──
   await page.click('[data-mod="nota"]');
   await page.waitForTimeout(300);

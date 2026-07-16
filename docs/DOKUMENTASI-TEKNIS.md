@@ -343,6 +343,34 @@ men-default-kan `[]`. Hanya memengaruhi OUTPUT — checklist tetap menampilkan s
 - Tabel `checkedAt` (kapan di-set/reset) identik dengan spec lama §6 — uncheck lalu
   check ulang = timestamp reset ke sekarang (keputusan pemilik).
 
+### Centang massal — global vs per-kategori
+Dua skenario berbeda cakupan, ditempatkan di UI berbeda supaya tidak tertukar:
+
+| | Cakupan | Lokasi tombol | Mode | Arah |
+|---|---|---|---|---|
+| **Global** | SEMUA item, SEMUA kategori | Baris aksi bawah (`#sk-check-all`, berpasangan dengan `#sk-reset-checks`) | Bos **dan** Karyawan | Hanya centang (lawan `Reset Semua Centang` yang hanya uncheck) |
+| **Per-kategori** | Hanya `s.items[s.activecat]` | Mini-tombol di baris counter (`#sk-counter [data-catall]`) | **Bos saja** (Karyawan tak punya pemilihan kategori) | Dua arah: `check` & `uncheck` |
+
+- `sk-check-all` selalu tampil di kedua mode — karyawan sering menerima order
+  yang semuanya berhasil diambil tanpa kekurangan; sekali ketuk menandai semua
+  tercentang lalu langsung salin balasan, tanpa mencentang satu-satu. Bos
+  memakainya saat audit stok penuh. Memakai `showConfirm` (blast-radius besar,
+  lintas kategori); item yang sudah tercentang dilewati (`n` dihitung, toast
+  "sudah tercentang" bila tidak ada perubahan).
+- `skCatAllToggle('check'|'uncheck')` hanya beroperasi pada array
+  `s.items[s.activecat]` — kategori lain **tidak tersentuh sama sekali** (diuji
+  eksplisit di smoke test). Muncul di `skUpdateCounter()` hanya bila
+  `skIsBoss() && items.length > 1`; tombol yang sudah tak relevan (`check` saat
+  semua tercentang, `uncheck` saat tak ada yang tercentang) diberi atribut
+  `disabled` (CSS `.mini-btn:disabled`) alih-alih disembunyikan — supaya tata
+  letak baris counter tidak "melompat".
+- Konsisten dengan `Reset Semua Centang` yang sudah ada: **tidak** memanggil
+  `skAppendLog` per item (log manual tetap khusus toggle satu-per-satu via
+  checkbox, bukan aksi massal) — mencegah Log Diambil banjir entri.
+- Kedua aksi memanggil `skTrackAct(...)` (§8 Jejak Aktivitas) dengan deskripsi
+  berbeda (`'centang semua item (N baru)'` vs `'centang semua di kategori "X"
+  (N item)'`) supaya jejak aktivitas tetap informatif membedakan cakupannya.
+
 ### Qty
 - Tombol −/+ step 1, tahan >500ms repeat 200ms, anti double-fire touch+click.
 - **Minus pada qty ≤1 = freeze** (tidak turun ke desimal — fix S6, permintaan pemilik).

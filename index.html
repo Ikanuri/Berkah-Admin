@@ -470,10 +470,11 @@ html[data-theme="dark"] .cat-tab.active{background:var(--ink);color:#262624;}
 .out-actions{position:absolute;top:8px;right:8px;display:flex;gap:5px;z-index:5;}
 .mini-btn{padding:4px 10px;border-radius:7px;border:1px solid var(--border2);background:var(--surface);font-size:10.5px;font-weight:600;color:var(--ink2);}
 .mini-btn:hover{border-color:var(--accent);color:var(--accent);}
+.mini-btn:disabled{opacity:.4;pointer-events:none;}
 .badge{font-family:var(--mono);font-size:9.5px;padding:2.5px 9px;border-radius:100px;font-weight:600;}
 .badge-boss{background:var(--accent);color:#fff;}
 .badge-timeout{background:var(--surface2);color:var(--ink3);border:1px solid var(--border);}
-.counter-line{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-top:10px;text-align:center;}
+.counter-line{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
 .counter-line .hl{color:var(--accent);font-weight:600;}
 
 /* PIN */
@@ -985,6 +986,7 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
 
   <!-- reset -->
   <div style="display:flex;gap:8px;justify-content:center;margin-top:18px;flex-wrap:wrap;">
+    <button class="btn" id="sk-check-all" style="display:none;">☑ Centang Semua</button>
     <button class="btn danger" id="sk-reset-checks" style="display:none;">↺ Reset Semua Centang</button>
     <button class="btn danger" id="sk-clear-items">🗑 Hapus Semua Item</button>
   </div>
@@ -3487,6 +3489,7 @@ function skRenderHeader(){
   $('sk-section-reply').style.display = skIsBoss() ? '' : 'none';
   $('sk-section-log').style.display = skIsBoss() ? '' : 'none';
   $('sk-filter-bar').style.display = skIsBoss() ? 'flex' : 'none';
+  $('sk-check-all').style.display = '';   // global — berguna di kedua mode (bos: tandai perlu order semua; karyawan: tandai sudah diambil semua)
   $('sk-reset-checks').style.display = skIsBoss() ? '' : 'none';
   $('sk-output-label').textContent = skIsBoss() ? 'Order ke Karyawan' : 'Balasan ke Bos';
   $('sk-input-label').textContent = skIsBoss() ? ('Tambah Barang — ' + skState.activecat) : 'Input Barang';
@@ -3519,12 +3522,37 @@ function skUpdateCounter(){
   if (!items.length || skSearch){ ctr.style.display = 'none'; }
   else {
     ctr.style.display = '';
-    ctr.innerHTML = '<span class="hl">'+checked+'</span> dari <span class="hl">'+items.length+'</span> dicentang';
+    let html = '<span><span class="hl">'+checked+'</span> dari <span class="hl">'+items.length+'</span> dicentang</span>';
+    // per-kategori: hanya Bos (worker tidak punya banyak kategori untuk dipilih)
+    if (skIsBoss() && items.length > 1){
+      const allOn = checked === items.length, allOff = checked === 0;
+      html += '<button class="mini-btn" data-catall="check"'+(allOn?' disabled':'')+'>☑ Semua</button>' +
+        '<button class="mini-btn" data-catall="uncheck"'+(allOff?' disabled':'')+'>✕ Semua</button>';
+    }
+    ctr.innerHTML = html;
   }
   const total = s.cats.flatMap(c => s.items[c]||[]).filter(i => i.checked).length;
   const tb = $('sk-total-badge');
   if (total > 0){ tb.style.display = ''; tb.textContent = total + ' ditandai'; }
   else tb.style.display = 'none';
+}
+// centang/batalkan semua item HANYA di kategori aktif (opsi #2 — lawan dari
+// aksi global; hanya relevan untuk Bos karena hanya Bos memilih kategori)
+function skCatAllToggle(action){
+  const s = skActive();
+  const items = s.items[s.activecat] || [];
+  let n = 0;
+  items.forEach(i => {
+    if (action === 'check' && !i.checked){ i.checked = true; i.checkedAt = Date.now(); n++; }
+    else if (action === 'uncheck' && i.checked){ i.checked = false; i.checkedAt = null; n++; }
+  });
+  if (!n){ showToast('Tidak ada perubahan'); return; }
+  skTrackAct((action === 'check' ? 'centang semua' : 'batalkan semua centang') + ' di kategori "' + s.activecat + '" (' + n + ' item)');
+  skSave();
+  skRenderChecklist();
+  skRenderLastAct();
+  skSyncOutput();
+  showToast((action === 'check' ? '☑ Dicentang semua: ' : '✕ Dibatalkan semua: ') + n + ' item (' + s.activecat + ')');
 }
 function skRenderCats(){
   const bar = $('sk-cat-bar');
@@ -4344,6 +4372,24 @@ function skInit(){
   $('sk-flt-from').addEventListener('change', onCustom);
   $('sk-flt-to').addEventListener('change', onCustom);
 
+  // opsi #1: centang SEMUA item di SEMUA kategori sekaligus (global — lawan
+  // dari "Reset Semua Centang"). Berguna di kedua mode: Bos "tandai semua
+  // perlu order", Karyawan "tandai semua sudah diambil" sebelum kirim balasan.
+  $('sk-check-all').addEventListener('click', () => {
+    const s = skActive();
+    const totalItems = s.cats.reduce((n,c) => n + (s.items[c]||[]).length, 0);
+    if (!totalItems){ showToast('Belum ada item'); return; }
+    showConfirm('Centang semua item di semua kategori?', 'Centang Semua', false, () => {
+      let n = 0;
+      s.cats.forEach(c => (s.items[c]||[]).forEach(i => {
+        if (!i.checked){ i.checked = true; i.checkedAt = Date.now(); n++; }
+      }));
+      if (!n){ showToast('Semua item sudah tercentang'); return; }
+      skTrackAct('centang semua item (' + n + ' baru)');
+      skSave(); skRenderChecklist(); skRenderLastAct(); skSyncOutput();
+      showToast('☑ Semua item dicentang (' + n + ' baru)');
+    });
+  });
   $('sk-reset-checks').addEventListener('click', () => {
     showConfirm('Reset semua centang?', 'Reset', false, () => {
       const s = skActive();
@@ -4352,6 +4398,11 @@ function skInit(){
       skSave(); skRenderChecklist(); skRenderLastAct(); skSyncOutput();
       showToast('Semua centang direset');
     });
+  });
+  // opsi #2: centang / batalkan semua HANYA di kategori aktif (Bos)
+  $('sk-counter').addEventListener('click', e => {
+    const b = e.target.closest('[data-catall]');
+    if (b) skCatAllToggle(b.dataset.catall);
   });
   $('sk-clear-items').addEventListener('click', () => {
     showConfirm('Hapus semua item dari daftar? Tidak bisa dibatalkan.', 'Hapus', true, () => {
