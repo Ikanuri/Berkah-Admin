@@ -79,7 +79,7 @@ Mengubah mesin tanpa menjalankan test = dilarang.
 Repo:
 ```
 index.html          aplikasi final (satu-satunya file yang dipakai user)
-data/Products.csv   contoh export Griyo POS (2.811 baris) — fixture test
+data/Products.csv   data produk toko (skema rujukan, 2.774 baris) — fixture test
 tests/              match-test.js · smoke.js · smoke-mobile.js · template.txt
 docs/               dokumen ini + PANDUAN-PENGGUNA.md
 ```
@@ -137,7 +137,7 @@ Setiap aturan lahir dari bug nyata (lihat §12):
 | `stok-oor` | Stok | tampilan item di luar filter: `'dim' \| 'hide'` |
 | `stok-output-ts` | Stok | header tanggal di output: `'show' \| 'hide'` |
 
-Total pemakaian tipikal (DB 2.811 produk + arsip setahun) ±600 KB — jauh di bawah kuota ±5 MB.
+Total pemakaian tipikal (DB 2.774 produk + arsip setahun) ±600 KB — jauh di bawah kuota ±5 MB.
 
 ---
 
@@ -150,17 +150,30 @@ input teks ──parseKulakanLine──▶ nkItems[] ──matchProduct──▶
 review ──nkBuildReceipt──▶ nota thermal ──▶ print / WA teks / WA gambar / riwayat
 ```
 
+### Skema CSV produk (satu-satunya yang didukung)
+```
+nama,kode_produk,barcode,satuan,harga_jual,harga_beli,induk_nama,induk_kode,satuan_dasar,rasio
+```
+Kolom `satuan` **sudah berupa label teks bersih** (`Slop`, `Pak`, `Biji`, `Dos`,
+…) — beda dari skema Griyo POS lama yang memakai kode angka (`1`, `9`, `12`…)
+dan mengharuskan derivasi/tebakan dari suffix `Kode Produk`. Migrasi ke skema
+ini (Juli 2026) **menghapus** `SATUAN_CODE_MAP` dan `rowSatuanLabel()` — satuan
+tinggal di-trim langsung dari kolom `satuan`, tidak ada lagi logika tebak-tebak.
+Separator koma; deteksi `;` vs `,` tetap dipertahankan sebagai toleransi kuirk
+ekspor Excel-locale, **bukan** dukungan skema alternatif.
+
+Kolom `induk_nama`/`induk_kode` (relasi produk induk-varian) dan `satuan_dasar`/
+`rasio` (konversi satuan, mis. 1 Ret = 10 pcs) ada di sumber data tapi **belum
+dipakai fitur apapun** — di-skip saat parsing, bukan disimpan ke DB runtime.
+`harga_beli` (harga modal) diparse ke `hargaPokok` untuk kelengkapan struktur,
+tapi juga belum dipakai fitur manapun.
+
 ### Struktur baris DB
 ```js
-{ nama, hargaJual, hargaPokok, satuan /*label tampil*/, satClass /*kelas cocok*/,
-  kode, barcode }
+{ nama, hargaJual, hargaPokok, satuan /*label tampil, langsung dari CSV*/,
+  satClass /*kelas cocok — lihat §6*/, kode, barcode }
 // cache runtime (tidak disimpan): _tok (token nama), _nn (string cari)
 ```
-Label satuan per-baris diambil dari **suffix kolom "Kode Produk"** bila dikenal
-(mis. `"7612 Slop"` → Slop), fallback ke `SATUAN_CODE_MAP` kode Griyo:
-`{1:Kg, 2:Biji, 4:Pak, 5:Bal, 6:Sak, 7:Biji, 8:Biji, 9:Slop, 10:Pres, 11:Ons,
-12:Biji, 13:Kas, 14:Dos, 15:Lusin, 16:Box, 17:Rek, 18:Ret, 19:Tas, 20:Ikat,
-22:Roll, 23:Toples, 24:Paket}` (kode 20=Ikat diderivasi dari data toko).
 
 ### Struktur item review (`nkItems[i]`)
 ```js
@@ -241,7 +254,7 @@ Pendukung: `PHRASE_SYNONYMS` (frisian flag→bendera), `TYPO_MAP` (foam→fom,
 kaleng→klng, mie→mi, …), `VARIANT_SOFT` (warna/rasa tak menghukum),
 `NOISE_WORDS` (random, campur, …), bobot posisi token [0.5, 0.3, 0.2, 0.1…],
 gerbang token pertama, penalti cakupan token produk tak terpakai, memo bigram
-(`_bgCache`/`_simCache`) — ±12 ms/pencarian pada 2.811 produk.
+(`_bgCache`/`_simCache`) — ±12 ms/pencarian pada 2.774 produk.
 
 **Tolok ukur tetap:** template kulakan nyata 43 baris (`tests/template.txt`) —
 43/43 sesuai harapan, 34 hijau otomatis, 6 kuning-top-benar, 3 flag-benar.
@@ -491,7 +504,7 @@ Palet chart terpisah dari token UI (lihat §7).
 node tests/match-test.js        # mesin pencocokan: 43/43 (ekstrak dari index.html)
 # smoke butuh playwright + chromium:
 npm i playwright                # (browser sudah ada? set CHROMIUM_PATH)
-CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 44/44
+CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 69/69
 CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 12/12
 ```
 
@@ -534,7 +547,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 3. `skSuppress` di-set sebelum menulis output programatik?
 4. Ada `const/let` dipakai sebelum deklarasi (IIFE awal)?
 5. Ada class CSS dipakai dua makna? (pelajaran G3)
-6. Test: 43/43, 44/44, 12/12 masih hijau?
+6. Test: 43/43, 69/69, 12/12 masih hijau?
 
 ---
 
@@ -574,7 +587,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 >    harga sampai 46× secara diam-diam dan salingnya menutupi di total. Mesin baru
 >    boleh bilang "tidak ketemu" — dan itu fitur, bukan kelemahan.
 >
-> Angka penjaga mutu saat saya menyerahkan ini: **43/43** uji mesin, **44/44**
+> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **69/69**
 > smoke desktop, **12/12** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
 > turun, kembalikan dulu sebelum melangkah.
 >

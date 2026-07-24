@@ -31,7 +31,7 @@ function check(name, cond, extra){
   await page.setInputFiles('#nk-csv-file', CSV);
   await page.waitForTimeout(1200);
   const dbChip = await page.textContent('#nk-db-chip');
-  check('CSV terupload & tersimpan', /2\.8\d\d produk/.test(dbChip), dbChip);
+  check('CSV terupload & tersimpan', /2\.7\d\d produk/.test(dbChip), dbChip);
 
   // persistensi DB: reload lalu cek chip
   await page.reload();

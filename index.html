@@ -1407,14 +1407,6 @@ function calcKey(k){
 //  5. Ragu tidak pernah diisi diam-diam → status eksplisit
 // ═══════════════════════════════════════════════════════════════
 
-// Peta kode satuan Griyo POS → label (diderivasi dari data CSV toko)
-const SATUAN_CODE_MAP = {
-  1:'Kg', 2:'Biji', 4:'Pak', 5:'Bal', 6:'Sak', 7:'Biji', 8:'Biji',
-  9:'Slop', 10:'Pres', 11:'Ons', 12:'Biji', 13:'Kas', 14:'Dos',
-  15:'Lusin', 16:'Box', 17:'Rek', 18:'Ret', 19:'Tas', 20:'Ikat',
-  22:'Roll', 23:'Toples', 24:'Paket',
-};
-
 // Label satuan → kelas ekuivalensi (untuk pencocokan, pres=slop dst.)
 const SAT_CLASS = {
   slop:'slop', slp:'slop', pres:'slop', press:'slop',
@@ -1724,7 +1716,12 @@ function parseKulakanLine(line){
   return { qty, satuan, nama };
 }
 
-// ── Parser CSV Griyo POS ──
+// ── Parser CSV Produk ──
+// Skema rujukan (satu-satunya yang didukung):
+//   nama,kode_produk,barcode,satuan,harga_jual,harga_beli,induk_nama,induk_kode,satuan_dasar,rasio
+// Kolom "satuan" SUDAH berupa label teks bersih (Slop/Pak/Biji/...) — tidak
+// perlu lagi ditebak dari kode angka atau suffix kode produk seperti skema
+// lama. induk_nama/induk_kode/satuan_dasar/rasio belum dipakai fitur apapun.
 function splitCSVLine(line, sep){
   const out = []; let cur = '', inQ = false;
   for (const ch of line){
@@ -1735,41 +1732,29 @@ function splitCSVLine(line, sep){
   out.push(cur);
   return out;
 }
-// Label satuan per baris: suffix "Kode Produk" bila dikenal, fallback peta kode
-function rowSatuanLabel(kodeProduk, satCode){
-  const words = String(kodeProduk||'').trim().toLowerCase().split(/\s+/);
-  const last = words[words.length-1] || '';
-  const KNOWN = {slop:'Slop',pak:'Pak',biji:'Biji',dos:'Dos',dus:'Dos',bal:'Bal',ret:'Ret',sak:'Sak',kg:'Kg',rek:'Rek',botol:'Botol',btl:'Botol',pres:'Pres',lbr:'Lbr',bks:'Bks',iket:'Ikat',ikat:'Ikat',kas:'Kas',lusin:'Lusin',pcs:'Biji',box:'Box',roll:'Roll',toples:'Toples',ons:'Ons',tas:'Tas',paket:'Paket',rtg:'Ret'};
-  if (KNOWN[last]) return KNOWN[last];
-  const byCode = SATUAN_CODE_MAP[parseInt(satCode)];
-  if (byCode) return byCode;
-  return String(satCode||'').trim() || '-';
-}
 function parseProductsCSV(text){
   const lines = String(text).replace(/^﻿/,'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if (!lines.length) return [];
-  const sep = lines[0].includes(';') ? ';' : ',';
+  const sep = lines[0].includes(';') ? ';' : ',';   // toleransi separator, bukan skema alternatif
   const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g,''));
   const idx = {};
   headers.forEach((h,i) => idx[h] = i);
-  const iNama = idx['Produk'], iJual = idx['Harga Jual'], iPokok = idx['Harga Pokok'],
-        iSat = idx['Satuan'], iKode = idx['Kode Produk'], iBar = idx['Barcode'];
+  const iNama = idx['nama'], iJual = idx['harga_jual'], iPokok = idx['harga_beli'],
+        iSat = idx['satuan'], iKode = idx['kode_produk'], iBar = idx['barcode'];
   if (iNama === undefined) return [];
   const db = [];
   for (let i=1; i<lines.length; i++){
     const c = splitCSVLine(lines[i], sep);
     const nama = (c[iNama]||'').trim().replace(/^"|"$/g,'').trim();
     if (!nama) continue;
-    const satCode = (c[iSat]||'').trim();
-    const kode = (c[iKode]||'').trim();
-    const label = rowSatuanLabel(kode, satCode);
+    const satuan = (c[iSat]||'').trim() || '-';
     db.push({
       nama,
       hargaJual:  parseFloat(String(c[iJual]||'').replace(',','.')) || 0,
       hargaPokok: parseFloat(String(c[iPokok]||'').replace(',','.')) || 0,
-      satuan: label,
-      satClass: satClassOf(label),
-      kode,
+      satuan,
+      satClass: satClassOf(satuan),
+      kode: (c[iKode]||'').trim(),
       barcode: (c[iBar]||'').trim(),
     });
   }

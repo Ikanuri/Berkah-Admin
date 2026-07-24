@@ -1,5 +1,8 @@
 // Uji mesin pencocokan Nota Kulakan — diekstrak LANGSUNG dari index.html
 // (single source of truth) lalu dijalankan terhadap 43 baris template nyata.
+// data/Products.csv memakai skema rujukan resmi:
+//   nama,kode_produk,barcode,satuan,harga_jual,harga_beli,induk_nama,induk_kode,satuan_dasar,rasio
+// (satuan sudah label teks langsung — lihat parseProductsCSV di index.html)
 // Jalankan: node tests/match-test.js
 const fs = require('fs');
 const path = require('path');
@@ -24,11 +27,11 @@ const CASES = [
   ['4 bj Sonice',                 {flag:'satuan_missing'}],
   ['4 sak Tinta 10kg',            {p:141000}],
   ['8 sak Tinta 5kg',             {p:71500}],
-  ['1 dus Tulip 1kg',             {p:89500}],
+  ['1 dus Tulip 1kg',             {p:86500}],
   ['1 sak Payung 25kg',           {p:175000}],
   ['1 bal Garam 1k',              {p:14000}],
-  ['3 kg Kacang Osik',            {p:33000}],
-  ['3 kg Bawang Putih',           {p:37500}],
+  ['3 kg Kacang Osik',            {p:34000}],
+  ['3 kg Bawang Putih',           {p:34000}],
   ['1 bal Kanji Naga 500g',       {p:72500}],
   ['3 kg Palmboom',               {flag:'satuan_missing'}],
   ['2 kg Kopi Nangka',            {p:75000}],
@@ -45,17 +48,17 @@ const CASES = [
   ['3 biji Tiga Sapi',            {p:12500}],
   ['1 dus Tea Jus Gula Batu',     {p:110000}],
   ['1 pak Jasjus Kepala Muda',    {p:15500}],
-  ['1 pak Adem Sari isi 24',      {p:51000}],
+  ['1 pak Adem Sari isi 24',      {p:52500}],
   ['1 slp Amplop You!',           {p:22000}],
   ['8 pak Bodrex',                {p:9000}],
   ['1 slp Raptor',                {p:166000}],
-  ['4 slp Gajah Baru F',          {p:168000}],
+  ['4 slp Gajah Baru F',          {p:170000}],
   ['1 slp Warkop',                {p:110000}],
   ['1 slp 76 12',                 {p:156000}],
   ['1 slp Sampoerna Prima',       {p:148500}],
   ['3 slp CD Nelayan',            {p:22500}],
-  ['2 slp Lawet Ijo',             {p:69000}],
-  ['1 ikt HD 1/2 12',             {p:37500}],
+  ['2 slp Lawet Ijo',             {p:70000}],
+  ['1 ikt HD 1/2 12',             {p:32000}],
   ['1 ikt Kresek Putih tg',       {flag:'satuan_missing'}],
   ['5 pak Lilin Popular',         {flag:'notfound'}],
   ['5 pak Lilin Abadi',           {p:7250}],

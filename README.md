@@ -4,7 +4,7 @@ Satu file HTML berisi tiga tools operasional Toko Berkah:
 
 | Modul | Fungsi |
 |---|---|
-| **Nota Kulakan** | Daftar belanja teks bebas → dicocokkan ke database produk (CSV Griyo POS) → nota thermal, print, share WA (teks/gambar), riwayat |
+| **Nota Kulakan** | Daftar belanja teks bebas → dicocokkan ke database produk (CSV) → nota thermal, print, share WA (teks/gambar), riwayat |
 | **PNL Analyzer** | Template harian ber-hashtag → tabel harian/mingguan/bulanan/rincian, filter tanggal, export CSV, laporan PDF |
 | **Stok Kosong** | Checklist stok kosong dua mode (Bos ↔ Karyawan), PIN + session timeout, sync antar device via WebRTC |
 
@@ -29,7 +29,15 @@ Rebuild total dari versi lama yang sering salah baris harga. Aturan inti:
 5. **Ragu tidak pernah diisi diam-diam** — status kuning/merah wajib dikonfirmasi.
 6. **Kamus belajar** — koreksi manual di dropdown diingat permanen.
 
-Hasil uji terhadap template kulakan nyata (43 baris, 2.811 produk): **43/43 sesuai harapan, 34 hijau otomatis** (mesin lama: ±26 benar dengan error senyap hingga 46× lipat harga).
+Hasil uji terhadap template kulakan nyata (43 baris, 2.774 produk): **43/43 sesuai harapan, 34 hijau otomatis** (mesin lama: ±26 benar dengan error senyap hingga 46× lipat harga).
+
+### Skema CSV produk
+
+```
+nama,kode_produk,barcode,satuan,harga_jual,harga_beli,induk_nama,induk_kode,satuan_dasar,rasio
+```
+
+Kolom `satuan` sudah berupa label teks langsung (`Slop`, `Pak`, `Biji`, …) — tidak perlu derivasi/tebakan dari kode angka POS.
 
 ## Testing
 
@@ -45,7 +53,7 @@ node tests/smoke.js
 
 ```
 index.html                   ← aplikasi lengkap (single file, vanilla JS, tanpa build)
-data/Products.csv            ← contoh export produk Griyo POS (database uji)
+data/Products.csv            ← data produk toko, skema rujukan (database uji)
 tests/                       ← test harness Node + Playwright
 docs/DOKUMENTASI-TEKNIS.md   ← arsitektur, mesin pencocokan, aturan wajib, riwayat bug
 docs/PANDUAN-PENGGUNA.md     ← panduan pemakaian lengkap (bahasa santai)
