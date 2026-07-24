@@ -125,6 +125,9 @@ Setiap kali Anda tekan Proses Data, semua baris `#pengeluaran` dan `#prive`
   [Gabungan | Pengeluaran | Prive]. **Ketuk irisan atau legend** → disorot +
   detail lengkap. 8 terbesar tampil, sisanya jadi "Lainnya".
 - **Tabel riwayat** per tanggal + subtotal. Hapus per tanggal (✕) atau semua.
+- **📄 Laporan PDF** — opsi cetak yang sama seperti di tab Analisis, tapi
+  isinya laporan Pengeluaran & Prive: ringkasan, porsi per keterangan, dan
+  rincian per tanggal. Ikut filter waktu/pencarian yang sedang aktif.
 
 > 💡 Punya catatan lama? Tempel raw PNL lama → Proses → seluruh sejarahnya
 > langsung masuk arsip.

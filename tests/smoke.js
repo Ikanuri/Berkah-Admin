@@ -113,6 +113,31 @@ function check(name, cond, extra){
   const sumCards = await page.$$eval('#pn-sum-cards .sum-card', els => els.length);
   check('8 kartu ringkasan', sumCards === 8);
 
+  // ── LAPORAN PDF ANALISIS: font & kontras kartu gelap ──
+  // fix root-cause: print-color-adjust dulu tidak diset → latar kartu gelap
+  // (Total Income/Kulakan) hilang saat print/PDF, teks terang jadi pudar di
+  // atas kertas putih. Font laporan juga pindah dari Cormorant Garamond/DM
+  // Mono (dekoratif+monospace) ke PT Serif (serif biasa ala koran).
+  await page.locator('#pn-pdf-btn').scrollIntoViewIfNeeded();
+  const [reportAnalisis] = await Promise.all([
+    page.context().waitForEvent('page'),
+    page.click('#pn-pdf-btn'),
+  ]);
+  await reportAnalisis.waitForLoadState('load');
+  await reportAnalisis.waitForTimeout(800);
+  check('Laporan Analisis: judul benar', (await reportAnalisis.title()) === 'Laporan PNL — Toko Berkah');
+  const kpiDark = await reportAnalisis.evaluate(() => {
+    const c = document.querySelector('.kpi-card.dark');
+    if (!c) return null;
+    const cs = getComputedStyle(c);
+    const v = getComputedStyle(c.querySelector('.kpi-v'));
+    return { bg: cs.backgroundColor, valColor: v.color, font: v.fontFamily };
+  });
+  check('Kartu KPI gelap: latar hitam tercetak (bukan pudar)', !!kpiDark && kpiDark.bg === 'rgb(26, 23, 20)', JSON.stringify(kpiDark && kpiDark.bg));
+  check('Kartu KPI gelap: nilai putih terang (kontras tinggi)', !!kpiDark && kpiDark.valColor === 'rgb(255, 255, 255)', JSON.stringify(kpiDark && kpiDark.valColor));
+  check('Font laporan pakai PT Serif (bukan Cormorant Garamond lagi)', !!kpiDark && /PT Serif/.test(kpiDark.font), kpiDark && kpiDark.font);
+  await reportAnalisis.close();
+
   // ── STOK ──
   await page.click('[data-mod="stok"]');
   await page.waitForTimeout(300);
@@ -357,6 +382,25 @@ function check(name, cond, extra){
   // tabel entri
   const arsRows = await page.$$('#ar-table tbody tr');
   check('Tabel arsip berisi baris', arsRows.length >= 3, arsRows.length + ' baris');
+
+  // ── LAPORAN PDF ARSIP: opsi print yang sama kini tersedia di tab Arsip ──
+  const arPdfBtn = await page.$('#ar-pdf-btn');
+  check('Tombol Laporan PDF ada di tab Arsip', !!arPdfBtn);
+  await page.locator('#ar-pdf-btn').scrollIntoViewIfNeeded();
+  const [reportArsip] = await Promise.all([
+    page.context().waitForEvent('page'),
+    page.click('#ar-pdf-btn'),
+  ]);
+  await reportArsip.waitForLoadState('load');
+  await reportArsip.waitForTimeout(800);
+  check('Laporan Arsip: judul benar', (await reportArsip.title()) === 'Laporan Arsip Pengeluaran & Prive — Toko Berkah');
+  const arsipKpiCount = await reportArsip.evaluate(() => document.querySelectorAll('.kpi-card').length);
+  check('Laporan Arsip: kartu KPI ter-render', arsipKpiCount === 6, arsipKpiCount + ' kartu');
+  const arsipBars = await reportArsip.evaluate(() => document.querySelectorAll('.bar-row').length);
+  check('Laporan Arsip: porsi per keterangan ter-render', arsipBars >= 1, arsipBars + ' baris');
+  const arsipRinDays = await reportArsip.evaluate(() => document.querySelectorAll('.rin-day').length);
+  check('Laporan Arsip: rincian per tanggal ter-render', arsipRinDays >= 1, arsipRinDays + ' hari');
+  await reportArsip.close();
 
   // ── SEEKBAR AUTO-COLLAPSE (fitur baru) ──
   await page.evaluate(() => window.scrollTo(0, 200));

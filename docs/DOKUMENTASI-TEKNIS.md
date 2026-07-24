@@ -339,7 +339,61 @@ Setiap perubahan mesin wajib mempertahankan angka ini.
 ### Laporan PDF
 `pnBuildReportHTML(payload)` membangun dokumen terpisah (string concat, CSS + skrip
 via `fungsi.toString()`), dibuka via **Blob URL**; popup diblokir → fallback unduh
-`.html`. Tanggal diserialisasi sebagai epoch ms.
+`.html`. Tanggal diserialisasi sebagai epoch ms. CSS-nya dibagikan lewat
+`pnReportCSS()` (satu fungsi, dipakai ulang oleh laporan Arsip di bawah).
+
+**Font: satu family serif "biasa ala koran", bukan lagi dekoratif+monospace.**
+Versi awal memakai 3 Google Fonts (`Cormorant Garamond` dekoratif tipis untuk
+judul/nilai, `DM Mono` untuk SEMUA label/header tabel, `Outfit` untuk body yang
+nyaris tak kepakai) — kombinasi ini yang bikin laporan "kurang cocok, susah
+dibaca". Diganti jadi:
+- `--serif: "PT Serif", Georgia, "Times New Roman", serif` — satu-satunya
+  Google Font yang di-load, dipakai untuk judul, nilai KPI, isi tabel, tanggal
+  rincian. Fallback ke Georgia (font sistem, selalu tersedia) kalau gagal load.
+- `--sans: Arial, Helvetica, sans-serif` — label kecil huruf besar (eyebrow,
+  header tabel, sub-label KPI, footer). Font sistem, tidak perlu network.
+- `--num: Consolas, "Liberation Mono", Menlo, monospace` — HANYA kolom angka
+  tabel (`.num`/`.r`), supaya digit tetap rata kolom. Font sistem juga.
+
+Hanya `--serif` yang butuh Google Fonts; `--sans`/`--num` selalu tersedia
+instan. Ini juga menutup kelas bug lain: window.print() bisa terpanggil
+sebelum web font selesai load (race condition), yang tadinya bikin campuran
+3 font gagal render konsisten — sekarang cuma 1 font yang berisiko, dan
+fallback-nya (Georgia) tetap terbaca rapi (diverifikasi: emulasi tanpa akses
+jaringan sama sekali → laporan tetap bersih, lihat §11).
+
+**Kartu KPI gelap pudar saat print/PDF (fix).** Kartu "Total Income" & "Total
+Kulakan" (`.kpi-card.dark`) didesain kontras tinggi: teks nyaris putih di atas
+latar nyaris hitam. Tapi browser **tidak mencetak warna latar secara default**
+kecuali opsi "background graphics" dicentang user — makanya di PDF yang
+di-generate user, kartunya jadi putih polos sementara teksnya tetap warna
+terang-untuk-latar-gelap → hasilnya pudar nyaris tak kebaca ("samar, tidak
+terang"). Fix: `-webkit-print-color-adjust:exact; color-adjust:exact;
+print-color-adjust:exact;` pada `*` — memaksa browser mencetak semua warna
+latar apa adanya, tanpa bergantung opsi user. Opacity teks kartu gelap juga
+dinaikkan (`--ink4`→`--ink3` untuk label umum, label kartu gelap dari `.45`→
+`.72` dan `.3`→`.58`) sebagai lapis kedua.
+
+### Laporan PDF — Arsip (opsi sama dengan tab Analisis)
+Tab Arsip punya tombol **📄 Laporan PDF** sendiri (`#ar-pdf-btn` → `arsOpenReport()`
+→ `arsBuildReportHTML()` → `arsReportScript()`), dibangun dengan CSS yang SAMA
+(`pnReportCSS()`) supaya identitas visual konsisten dengan laporan Analisis —
+tapi isinya disesuaikan dengan data Arsip (yang cuma berisi entri pengeluaran/
+prive, TANPA income/kulakan/cash — itu domain Analisis, bukan Arsip):
+- **Ringkasan** (6 kartu): Total Pengeluaran & Total Prive (gelap, sama seperti
+  Total Income/Kulakan di Analisis), Total Gabungan, Jumlah Entri, Cakupan
+  Hari, Rata-rata/Hari.
+- **Porsi per Keterangan**: bar chart horizontal (pola sama seperti "Income
+  Harian" di laporan Analisis), dikelompokkan per keterangan+jenis, **TANPA**
+  batas top-8 (beda dari donut live yang dibatasi demi keterbacaan chart —
+  laporan cetak menampilkan semua, `.bar-lbl.wide` 150px supaya label panjang
+  tak terlalu sering wrap 2 baris).
+- **Rincian per Tanggal**: pola `rin-day`/`rin-head`/`rin-item` yang sama
+  dengan section "Rincian Pengeluaran & Prive" di laporan Analisis, ditambah
+  subtotal per tanggal di `rin-head` (`justify-content:space-between` inline).
+- Data yang dipakai = `arsEntries()` — **menghormati filter yang aktif** di
+  layar (tanggal/search), sama seperti laporan Analisis yang memakai
+  `pnFiltered` bukan `pnAll`.
 
 ---
 
@@ -537,16 +591,19 @@ Palet chart terpisah dari token UI (lihat §7).
 node tests/match-test.js        # mesin pencocokan: 43/43 (ekstrak dari index.html)
 # smoke butuh playwright + chromium:
 npm i playwright                # (browser sudah ada? set CHROMIUM_PATH)
-CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 69/69
-CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 12/12
+CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 78/78
+CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 18/18
 ```
 
-Cakupan smoke: upload & persistensi CSV, parse 43 baris, dropdown+search+kamus,
+Cakupan smoke: upload & persistensi CSV, parse 43 baris, dropdown+search+kamus
+(termasuk portal `#nk-cdfloat` tak terklip di baris bawah tabel mobile),
 kalkulator (modal, terpusat, **ukuran stabil setelah ketik — regresi bug nyata**),
-generate nota, PNL mode B + `#cash` multi-angka, arsip auto-isi + donut + legend +
-sorot + search + toggle jenis, stok add/toggle/output-dua-arah/minus-freeze,
-gesture 5-tap + PIN + `mode:'worker'` di storage, seekbar collapse/tembus-klik/
-bangun, nav bawah, font ≥16px, tema, signature.
+generate nota, PNL mode B + `#cash` multi-angka, laporan PDF Analisis (kontras
+kartu gelap tercetak benar + font PT Serif), arsip auto-isi + donut + legend +
+sorot + search + toggle jenis + laporan PDF Arsip (opsi sama, konten sesuai
+data Arsip), stok add/toggle/output-dua-arah/minus-freeze, gesture 5-tap + PIN +
+`mode:'worker'` di storage, seekbar collapse/tembus-klik/bangun, nav bawah,
+font ≥16px, tema, signature.
 
 **Definisi selesai untuk perubahan apapun:** ketiga test hijau + screenshot visual
 kedua tema dilihat mata.
@@ -574,6 +631,8 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | G3 | **Kalkulator menyusut 42px pada ketikan pertama** | class `empty` dipakai ganda: state kalkulator & empty-state panel ber-padding 44px — lepas class = lepas padding | rename `is-zero` + tinggi display dikunci. **Pelajaran: satu class = satu makna** |
 | S1–S6 | (stok) narasi terbalik, badge state bos di mode karyawan, kartu tak sinkron dari edit output, numpad sensitif scroll, PIN bypass saat upgrade, minus→0.01 | lihat §8 | semua difix |
 | N3 | Dropdown produk baris bawah terpotong di HP, tak bisa diklik | `.tbl-wrap{overflow-x:auto}` diam-diam membuat `overflow-y` ikut jadi `auto` (aturan CSS: satu sumbu non-`visible` memaksa sumbu lain jadi `auto`), mengklip `.cd-list` yang menjorok di luar tinggi tabel | portal ke `#nk-cdfloat` (`position:fixed` di `<body>`, lihat §5) + sub-fix jendela toleransi 150ms untuk hindari `scroll` residual dari `scrollIntoView()` yang menutup dropdown sendiri sesaat setelah dibuka |
+| P8 | Kartu KPI gelap (Total Income/Kulakan) pudar di laporan PDF | browser tidak mencetak `background-color` secara default kecuali user centang "background graphics" — teks terang-untuk-latar-gelap jadi nyaris putih-di-atas-putih | `print-color-adjust:exact` dkk di `pnReportCSS()` (lihat §7) |
+| P9 | Font laporan PDF "kurang cocok, susah dibaca" | 3 Google Fonts dekoratif+monospace (Cormorant Garamond/DM Mono/Outfit), rawan gagal load sebelum `window.print()` (race condition) | satu font serif biasa "PT Serif" (fallback sistem Georgia) + label/angka pakai font sistem (`Arial`/`Consolas`), lihat §7 |
 
 ### Checklist debug cepat
 1. Fungsi stok pakai `skActive()` atau `skState` yang salah?
@@ -581,7 +640,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 3. `skSuppress` di-set sebelum menulis output programatik?
 4. Ada `const/let` dipakai sebelum deklarasi (IIFE awal)?
 5. Ada class CSS dipakai dua makna? (pelajaran G3)
-6. Test: 43/43, 69/69, 12/12 masih hijau?
+6. Test: 43/43, 78/78, 18/18 masih hijau?
 
 ---
 
@@ -621,8 +680,8 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 >    harga sampai 46× secara diam-diam dan salingnya menutupi di total. Mesin baru
 >    boleh bilang "tidak ketemu" — dan itu fitur, bukan kelemahan.
 >
-> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **69/69**
-> smoke desktop, **12/12** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
+> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **78/78**
+> smoke desktop, **18/18** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
 > turun, kembalikan dulu sebelum melangkah.
 >
 > — ✳ *Claude Fable 5 · Anthropic · Juli 2026*
