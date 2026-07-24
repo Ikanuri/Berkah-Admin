@@ -53,7 +53,7 @@ function check(name, cond, extra){
   // dropdown pilih → kamus belajar
   await page.click('#nk-table .cd-trigger');
   await page.waitForTimeout(300);
-  const cdItems = await page.$$('#nk-table .cd-list.open .cd-item');
+  const cdItems = await page.$$('#nk-cdfloat.open .cd-item');
   check('Dropdown produk terbuka', cdItems.length > 0, cdItems.length + ' opsi');
   if (cdItems.length) await cdItems[0].click();
   await page.waitForTimeout(300);
@@ -311,11 +311,11 @@ function check(name, cond, extra){
   check('Baris notfound juga dapat dropdown', trigs.length === 43, trigs.length + ' dropdown');
   await trigs[37].click();
   await page.waitForTimeout(250);
-  const searchInp = await page.$('#nk-table .cd-list.open .cd-search input');
+  const searchInp = await page.$('#nk-cdfloat.open .cd-search input');
   check('Kotak search ada di dalam dropdown', !!searchInp);
   await searchInp.type('lilin');
   await page.waitForTimeout(350);
-  const resItems = await page.$$('#nk-table .cd-list.open [data-act="cdpick-db"]');
+  const resItems = await page.$$('#nk-cdfloat.open [data-act="cdpick-db"]');
   check('Search DB memberi hasil', resItems.length > 0, resItems.length + ' hasil utk "lilin"');
   const learnBefore = await page.textContent('#nk-learn-chip');
   await resItems[0].click();

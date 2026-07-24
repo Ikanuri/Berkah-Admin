@@ -202,6 +202,38 @@ rank prefix-token-pertama; maks 20 hasil). Memilih dari daftar apapun →
 Fokus otomatis ke kotak cari hanya di desktop (≥701px) supaya keyboard HP tidak
 langsung membuka.
 
+**Arsitektur "portal" (satu elemen bersama, bukan satu per baris).** Awalnya tiap
+baris punya `<div class="cd-list">` sendiri, `position:absolute` relatif ke
+barisnya, hidup di dalam `.tbl-wrap` (`overflow-x:auto` untuk scroll horizontal
+di HP). Masalah: menurut spesifikasi CSS, kalau satu sumbu overflow diset
+non-`visible` sementara sumbu lain `visible`, browser diam-diam menghitung
+sumbu yang `visible` itu jadi `auto` juga — jadi `.tbl-wrap` ikut mengklip
+`overflow-y`, dan dropdown baris-baris bawah (yang secara visual menjorok di
+luar tinggi tabel) terpotong tak bisa diklik. Baris teratas jarang kena karena
+dropdownnya masih muat di area yang belum diklip.
+
+Fix: satu elemen `#nk-cdfloat` (`position:fixed`) di-taruh di level `<body>`,
+di luar `.tbl-wrap` sepenuhnya sehingga kebal dari klip overflow apapun.
+- `nkOpenDropdown(i, triggerEl)` — isi konten via `nkFillFloat(i)`, hitung
+  posisi via `nkPositionFloat(triggerEl)` (pakai `getBoundingClientRect()`:
+  buka ke bawah jika ruang cukup, else lipat ke atas), lalu tambah class `open`.
+- `nkPositionFloat` juga meng-clamp `left` supaya lebar dropdown tidak keluar
+  layar di HP sempit.
+- Klik/­input di dalam float ditangani oleh satu listener delegated yang
+  dipasang sekali saat init (`data-act="cdpick"` / `"cdpick-db"` / `"cdsearch"`),
+  bukan lagi listener per-baris.
+- **Jebakan timing scroll**: menutup dropdown saat `scroll` (karena posisi jadi
+  tidak valid setelah halaman bergeser) awalnya naif — `scrollIntoView()` yang
+  dipanggil sesaat sebelum membuka dropdown kadang memicu event `scroll` native
+  yang baru sampai *setelah* dropdown terbuka, sehingga dropdown yang baru saja
+  dibuka langsung tertutup sendiri. Difix dengan `nkOpenedAt` (timestamp saat
+  dibuka) + jendela toleransi 150ms: `scroll` yang datang dalam 150ms sejak buka
+  diabaikan, scroll sesudahnya tetap menutup seperti mestinya.
+- `resize` juga menutup dropdown (posisi absolut jadi tidak relevan).
+- Efek samping menguntungkan: karena `#nk-cdfloat` di luar area scroll tabel,
+  klik native Playwright di dalamnya stabil (tak perlu workaround klik-programatik
+  yang dipakai untuk elemen di dalam `.tbl-wrap`).
+
 ### Kamus belajar
 Key: `tokenizeName(namaInput).join(' ') + '|' + satClassOf(satuan)` → nilai: nama
 produk DB. Diterapkan di `matchProduct` sebagai skor 1.0 (kunci spesifik-satuan
@@ -540,6 +572,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | G2 | "Kalkulator mengecil" saat fokus input | auto-zoom browser (input <16px) | font input ≥16px mobile |
 | G3 | **Kalkulator menyusut 42px pada ketikan pertama** | class `empty` dipakai ganda: state kalkulator & empty-state panel ber-padding 44px — lepas class = lepas padding | rename `is-zero` + tinggi display dikunci. **Pelajaran: satu class = satu makna** |
 | S1–S6 | (stok) narasi terbalik, badge state bos di mode karyawan, kartu tak sinkron dari edit output, numpad sensitif scroll, PIN bypass saat upgrade, minus→0.01 | lihat §8 | semua difix |
+| N3 | Dropdown produk baris bawah terpotong di HP, tak bisa diklik | `.tbl-wrap{overflow-x:auto}` diam-diam membuat `overflow-y` ikut jadi `auto` (aturan CSS: satu sumbu non-`visible` memaksa sumbu lain jadi `auto`), mengklip `.cd-list` yang menjorok di luar tinggi tabel | portal ke `#nk-cdfloat` (`position:fixed` di `<body>`, lihat §5) + sub-fix jendela toleransi 150ms untuk hindari `scroll` residual dari `scrollIntoView()` yang menutup dropdown sendiri sesaat setelah dibuka |
 
 ### Checklist debug cepat
 1. Fungsi stok pakai `skActive()` atau `skState` yang salah?

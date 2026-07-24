@@ -11,7 +11,7 @@ function check(name, cond, extra){
   console.log((cond ? '✓' : '✗') + ' ' + name + (extra ? ' — ' + extra : ''));
 }
 (async () => {
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const page = await browser.newPage({
     viewport: { width: 390, height: 844 },
     isMobile: true, hasTouch: true,
@@ -67,6 +67,45 @@ function check(name, cond, extra){
     'Δw=' + Math.abs(box1.w-box2.w).toFixed(1) + ' Δh=' + Math.abs(box1.h-box2.h).toFixed(1));
   await tapSafe('[data-k="ok"]');
   await page.waitForTimeout(300);
+
+  // 4b. dropdown produk BARIS BAWAH tabel panjang — reproduksi persis bug
+  // laporan: dropdown terpotong oleh overflow-x:auto milik .tbl-wrap.
+  // Klik trigger via evaluate (bukan Playwright .click()) — tabel scroll
+  // horizontal membuat tap fisik di dalamnya tidak stabil (lihat tapSafe).
+  // #nk-cdfloat sendiri di LUAR area scroll itu, jadi klik native aman dipakai.
+  async function clickLastTrigger(){
+    await page.evaluate(() => {
+      const trigs = document.querySelectorAll('#nk-table .cd-trigger');
+      const el = trigs[trigs.length - 1];
+      el.scrollIntoView({ block: 'end', behavior: 'instant' });
+      el.click();
+    });
+    await page.waitForTimeout(300);
+  }
+  await clickLastTrigger();
+  const floatOpen = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
+  check('Dropdown baris bawah terbuka (portal ke body)', floatOpen);
+  const floatRect = await page.$eval('#nk-cdfloat', el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; });
+  check('Dropdown TIDAK terpotong — seluruhnya di dalam viewport', floatRect.top >= 0 && floatRect.bottom <= 844, JSON.stringify(floatRect));
+  const cdItemsM = await page.$$('#nk-cdfloat.open .cd-item');
+  check('Item dropdown baris bawah ada & bisa diukur (bukti tidak terklip)', cdItemsM.length > 0, cdItemsM.length + ' item');
+  if (cdItemsM.length){
+    const itemBox = await cdItemsM[0].boundingBox();
+    check('Item dropdown punya bounding box valid (benar-benar bisa diklik)', !!itemBox && itemBox.height > 0, JSON.stringify(itemBox));
+    await cdItemsM[0].click();
+    await page.waitForTimeout(300);
+    const stillOpen = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
+    check('Klik item dropdown baris bawah berhasil memilih (dropdown menutup)', !stillOpen);
+  }
+  // scroll saat dropdown terbuka → otomatis menutup (posisi jadi tidak valid).
+  // klik di atas memicu nkRenderTable() (#nk-table diregenerasi) — clickLastTrigger
+  // query ulang dari DOM tiap dipanggil, jadi aman dari elemen stale.
+  await clickLastTrigger();
+  const openBeforeScroll = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
+  await page.evaluate(() => window.scrollBy(0, 50));
+  await page.waitForTimeout(200);
+  const openAfterScroll = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
+  check('Scroll saat dropdown terbuka → otomatis tertutup', openBeforeScroll && !openAfterScroll);
 
   // 5. seekbar muncul saat halaman panjang + jump bekerja
   const seekVisible = await page.$eval('#g-seek', el => !el.classList.contains('hide'));

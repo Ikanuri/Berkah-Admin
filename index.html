@@ -249,6 +249,11 @@ td.strip{width:4px;padding:0;border-radius:3px 0 0 3px;}
 .cd-search input:focus{border-color:var(--accent);background:var(--surface);}
 .cd-search::before{content:'⌕';position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--ink4);font-size:13px;pointer-events:none;}
 .cd-empty{padding:12px 10px;font-size:11.5px;color:var(--ink4);text-align:center;font-family:var(--mono);}
+/* dropdown produk di-portal ke <body> (position:fixed) — bebas dari klip
+   overflow:auto milik .tbl-wrap (tabel scroll horizontal di HP). Posisi &
+   lebar diatur inline oleh JS tiap kali dibuka. */
+#nk-cdfloat{position:fixed;right:auto;border-radius:10px;}
+#nk-cdfloat.open{display:block;}
 
 /* ── MODALS ── */
 .overlay{
@@ -1016,6 +1021,7 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
 
 <div id="toast"></div>
 <div id="nk-print-area" style="display:none;"></div>
+<div class="cd-list" id="nk-cdfloat"></div>
 
 <!-- ═══════════════ MODAL: KALKULATOR QTY (bersama) ═══════════════ -->
 <div class="overlay" id="g-calc-overlay">
@@ -1780,6 +1786,8 @@ let nkDb = [];
 let nkLearn = {};
 let nkItems = [];
 let nkGenerated = null; // nota terakhir yang digenerate {num,date,ket,lines,total}
+let nkOpenRow = -1;     // indeks baris yang dropdown produknya sedang terbuka (-1 = tertutup)
+let nkOpenedAt = 0;     // timestamp buka — filter event scroll residu (lihat listener scroll di init)
 
 // ── DATABASE ──
 function nkLoadDb(){
@@ -1913,13 +1921,15 @@ function nkRenderTable(){
     const selName = item.sel ? item.sel.nama : '⌕ cari produk…';
     const selMeta = item.sel ? item.sel.satuan + ' · Rp ' + fmtRp(item.sel.hargaJual)
       : (item.options.length ? item.options.length + ' kandidat' : 'ketik untuk mencari di database');
+    // list dropdown DI-PORTAL ke #nk-cdfloat (body-level, position:fixed) —
+    // bukan anak .cd-wrap — supaya tidak terklip oleh scroll horizontal
+    // .tbl-wrap di HP (lihat nkOpenDropdown)
     const prodCell = '<div class="cd-wrap">' +
       '<div class="cd-trigger" data-act="cdtrig" data-i="'+i+'">' +
         '<span class="cd-label"'+(item.sel?'':' style="color:var(--ink4);"')+'>'+esc(selName)+'</span>' +
         '<span class="cd-meta">'+esc(selMeta)+'</span>' +
         '<span class="cd-arrow">▾</span>' +
-      '</div>' +
-      '<div class="cd-list" id="nk-cdlist-'+i+'"></div></div>';
+      '</div></div>';
     html += '<tr>' +
       '<td class="strip" style="background:'+nkStripColor(item)+';"></td>' +
       '<td style="color:var(--ink4);font-family:var(--mono);font-size:11px;">'+(i+1)+'</td>' +
@@ -1953,13 +1963,48 @@ function nkOptionHtml(item, i){
   });
   return html || '<div class="cd-empty">Tidak ada kandidat — ketik di kotak cari ↑</div>';
 }
-function nkFillDropdown(i){
+// Posisikan #nk-cdfloat tepat di bawah trigger (atau di atas kalau ruang
+// bawah sempit) — pakai getBoundingClientRect + position:fixed supaya lolos
+// dari overflow:auto milik .tbl-wrap (akar masalah "dropdown terpotong").
+function nkPositionFloat(triggerEl){
+  const float = $('nk-cdfloat');
+  const rect = triggerEl.getBoundingClientRect();
+  const vh = window.innerHeight;
+  const spaceBelow = vh - rect.bottom - 10;
+  const spaceAbove = rect.top - 10;
+  const desired = 280;
+  let top, maxH;
+  if (spaceBelow >= 160 || spaceBelow >= spaceAbove){
+    maxH = Math.max(120, Math.min(desired, spaceBelow));
+    top = rect.bottom + 4;
+  } else {
+    maxH = Math.max(120, Math.min(desired, spaceAbove));
+    top = rect.top - maxH - 4;
+  }
+  const vw = document.documentElement.clientWidth;
+  const left = Math.min(Math.max(8, rect.left), vw - rect.width - 8);
+  float.style.left = left + 'px';
+  float.style.width = rect.width + 'px';
+  float.style.top = top + 'px';
+  float.style.maxHeight = maxH + 'px';
+}
+function nkFillFloat(i){
   const item = nkItems[i];
-  const list = $('nk-cdlist-'+i);
-  if (!list) return;
-  list.innerHTML =
+  $('nk-cdfloat').innerHTML =
     '<div class="cd-search"><input type="text" placeholder="Cari di '+nkDb.length.toLocaleString('id-ID')+' produk…" data-act="cdsearch" data-i="'+i+'" autocomplete="off"></div>' +
-    '<div id="nk-cdres-'+i+'">' + nkOptionHtml(item, i) + '</div>';
+    '<div id="nk-cdfloat-res">' + nkOptionHtml(item, i) + '</div>';
+}
+function nkOpenDropdown(i, triggerEl){
+  nkOpenRow = i;
+  nkOpenedAt = Date.now();
+  nkFillFloat(i);
+  nkPositionFloat(triggerEl);
+  const float = $('nk-cdfloat');
+  float.classList.add('open');
+  triggerEl.classList.add('open');
+  const si = float.querySelector('.cd-search input');
+  // fokus otomatis hanya di desktop — di HP keyboard jangan langsung muncul
+  if (si && window.matchMedia('(min-width: 701px)').matches) si.focus();
 }
 // search seluruh DB: semua kata query harus muncul di nama produk (ternormalisasi)
 function nkSearchDb(q){
@@ -1981,7 +2026,7 @@ function nkSearchDb(q){
   return out.slice(0, 20);
 }
 function nkRenderSearch(i, q){
-  const box = $('nk-cdres-'+i);
+  const box = $('nk-cdfloat-res');
   if (!box) return;
   const item = nkItems[i];
   if (!q.trim()){ box.innerHTML = nkOptionHtml(item, i); return; }
@@ -1999,8 +2044,9 @@ function nkRenderSearch(i, q){
   box.innerHTML = html;
 }
 function nkCloseDropdowns(){
-  document.querySelectorAll('#nk-table .cd-list.open').forEach(el => el.classList.remove('open'));
+  $('nk-cdfloat').classList.remove('open');
   document.querySelectorAll('#nk-table .cd-trigger.open').forEach(el => el.classList.remove('open'));
+  nkOpenRow = -1;
 }
 function nkUpdateTotals(){
   let total = 0;
@@ -2028,37 +2074,15 @@ function nkPickRow(i, row){
   nkRenderTable();
 }
 function nkTableClick(e){
-  // klik di dalam kotak cari dropdown → jangan tutup dropdown
-  if (e.target.closest('.cd-search')){ e.stopPropagation(); return; }
   const t = e.target.closest('[data-act]');
   if (!t) return;
   const act = t.dataset.act;
   const i = parseInt(t.dataset.i);
   if (act === 'cdtrig'){
     e.stopPropagation();
-    const list = $('nk-cdlist-'+i);
-    const wasOpen = list.classList.contains('open');
+    const wasOpenHere = nkOpenRow === i && $('nk-cdfloat').classList.contains('open');
     nkCloseDropdowns();
-    if (!wasOpen){
-      nkFillDropdown(i);
-      list.classList.add('open');
-      t.classList.add('open');
-      const si = list.querySelector('.cd-search input');
-      // fokus otomatis hanya di desktop — di HP keyboard jangan langsung muncul
-      if (si && window.matchMedia('(min-width: 701px)').matches) si.focus();
-    }
-    return;
-  }
-  if (act === 'cdpick'){
-    e.stopPropagation();
-    const opt = nkItems[i].options[parseInt(t.dataset.oi)];
-    if (opt) nkPickRow(i, opt.row);
-    return;
-  }
-  if (act === 'cdpick-db'){
-    e.stopPropagation();
-    const row = nkDb[parseInt(t.dataset.dbi)];
-    if (row) nkPickRow(i, row);
+    if (!wasOpenHere) nkOpenDropdown(i, t);
     return;
   }
   if (act === 'qty'){
@@ -2349,6 +2373,39 @@ function nkInit(){
   $('nk-table').addEventListener('change', nkTableChange);
   $('nk-table').addEventListener('input', nkTableInput);
   document.addEventListener('click', nkCloseDropdowns);
+  // dropdown mengambang (#nk-cdfloat) hidup di luar #nk-table (portal ke
+  // body) — pick & search-nya butuh listener sendiri, dan klik di dalamnya
+  // TIDAK BOLEH ikut menutup dropdown lewat listener document di atas
+  $('nk-cdfloat').addEventListener('click', e => {
+    e.stopPropagation();
+    const t = e.target.closest('[data-act]');
+    if (!t) return;
+    const i = parseInt(t.dataset.i);
+    if (t.dataset.act === 'cdpick'){
+      const opt = nkItems[i].options[parseInt(t.dataset.oi)];
+      if (opt) nkPickRow(i, opt.row);
+    } else if (t.dataset.act === 'cdpick-db'){
+      const row = nkDb[parseInt(t.dataset.dbi)];
+      if (row) nkPickRow(i, row);
+    }
+  });
+  $('nk-cdfloat').addEventListener('input', e => {
+    const t = e.target.closest('[data-act="cdsearch"]');
+    if (!t) return;
+    nkRenderSearch(parseInt(t.dataset.i), t.value);
+  });
+  // tutup dropdown mengambang saat halaman ATAU tabel discroll (posisinya
+  // snapshot di saat buka — scroll membuatnya tidak lagi align dgn trigger).
+  // Jeda 150ms: event 'scroll' residu dari scrollIntoView (mis. saat trigger
+  // di-scroll ke layar sebelum diklik) kadang baru terpicu SETELAH dropdown
+  // terbuka, bukan sebelumnya — tanpa jeda ini, dropdown yang baru saja
+  // dibuka langsung tertutup lagi oleh event scroll miliknya sendiri.
+  document.addEventListener('scroll', () => {
+    if (nkOpenRow >= 0 && Date.now() - nkOpenedAt > 150) nkCloseDropdowns();
+  }, true);
+  window.addEventListener('resize', () => {
+    if (nkOpenRow >= 0) nkCloseDropdowns();
+  });
 
   $('nk-print-btn').addEventListener('click', nkPrint);
   $('nk-wa-btn').addEventListener('click', nkShareWAText);
