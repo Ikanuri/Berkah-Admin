@@ -300,7 +300,8 @@ Setiap perubahan mesin wajib mempertahankan angka ini.
 - **Mode A**: blok dipisah baris kosong ganda; tanggal = tanggalMulai + indeks blok.
   Blok dilewati **tetap menggeser tanggal** → preview per-blok ditampilkan dengan
   peringatan (mitigasi P4).
-- **Mode B**: blok dipisah kemunculan `#tanggal DD/MM/YYYY` (tahun 2 digit → +2000).
+- **Mode B**: blok dipisah kemunculan `#tanggal YYYY-MM-DD` (mis. `2026-07-22`).
+  `pnParseTanggal` split by `-`, urutan y-m-d — bukan lagi `DD/MM/YYYY`.
 - `#cash` menjumlah **semua angka di barisnya** (`#cash 5628000 + 190000 saldo` →
   5.818.000) — by design (fix P2).
 - `#gross/#net_cash/#margin*` di input diabaikan (dihitung ulang).

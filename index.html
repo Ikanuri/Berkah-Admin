@@ -783,7 +783,7 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
         <div class="hint" style="margin:0 0 8px;">Setiap blok = 1 hari berurutan. Blok dipisah <span class="hl">baris kosong ganda</span>. Hati-hati baris kosong nyasar — cek preview tanggal setelah proses.</div>
       </div>
       <div id="pn-panel-b" style="display:none;">
-        <div class="hint" style="margin:0 0 8px;">Setiap hari diawali <span class="hl">#tanggal DD/MM/YYYY</span> (tahun 2 digit juga bisa). Baris kosong bebas.</div>
+        <div class="hint" style="margin:0 0 8px;">Setiap hari diawali <span class="hl">#tanggal YYYY-MM-DD</span> (mis. 2026-07-22). Baris kosong bebas.</div>
       </div>
       <textarea class="inp" id="pn-raw" style="width:100%;height:260px;" placeholder="#pengeluaran&#10;350000 Uang Indah&#10;#prive&#10;66200 Belanja Indomaret&#10;&#10;#cash 5628000 + 190000 saldo&#10;#receh 21000&#10;#income 7497200&#10;#kulakan 5808330"></textarea>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
@@ -2461,12 +2461,11 @@ function pnParseAngka(str){
 }
 function pnParseTanggal(str){
   if (!str) return null;
-  const p = str.trim().split('/');
+  const p = str.trim().split('-');
   if (p.length !== 3) return null;
-  let d = parseInt(p[0]), m = parseInt(p[1]), y = parseInt(p[2]);
-  if (y < 100) y += 2000;
+  let y = parseInt(p[0]), m = parseInt(p[1]), d = parseInt(p[2]);
   if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
-  return new Date(y, m-1, d, 0, 0, 0, 0);   // LOKAL
+  return new Date(y, m-1, d, 0, 0, 0, 0);   // LOKAL — format YYYY-MM-DD, mis. 2026-07-22
 }
 function pnSplitBloks(raw){
   raw = raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');

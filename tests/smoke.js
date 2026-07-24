@@ -87,7 +87,7 @@ function check(name, cond, extra){
   await page.click('#pn-mode-b');
   const modeB = await page.$eval('#pn-mode-b', el => el.classList.contains('active'));
   check('PNL Mode B bisa diaktifkan (fix P1)', modeB);
-  const pnlData = `#tanggal 1/6/26
+  const pnlData = `#tanggal 2026-06-01
 #pengeluaran
 350000 Uang Indah
 #prive
@@ -97,7 +97,7 @@ function check(name, cond, extra){
 #income 7497200
 #kulakan 5808330
 
-#tanggal 2/6/26
+#tanggal 2026-06-02
 #cash 4100000
 #receh 15000
 #income 5000000

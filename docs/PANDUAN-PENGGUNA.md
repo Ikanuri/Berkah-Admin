@@ -83,7 +83,7 @@ Tempel catatan harian → dapat tabel untung-rugi + laporan cantik.
 
 ### Format template harian
 ```
-#tanggal 1/7/26
+#tanggal 2026-07-01
 #pengeluaran
 350000 Uang Indah
 200000 Uang Dede
@@ -98,7 +98,7 @@ Tempel catatan harian → dapat tabel untung-rugi + laporan cantik.
 ```
 - `#cash` boleh berisi tambahan (`+ 190000 saldo`) — semua angka dijumlah.
 - `#gross`, `#margin` dll **tidak perlu ditulis** — dihitung otomatis.
-- Tahun 2 digit boleh (`1/7/26`).
+- Format tanggal: `YYYY-MM-DD` (mis. `2026-07-01`).
 
 ### Dua mode input
 - **Mode Urutan Otomatis** — tanpa `#tanggal`; isi tanggal mulai, tiap blok
