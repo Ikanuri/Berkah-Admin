@@ -15,7 +15,7 @@ function check(name, cond, extra){
 
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', msg => {
@@ -445,6 +445,28 @@ function check(name, cond, extra){
   await page.waitForTimeout(400);
   const railWake = await page.$eval('#g-seek', el => el.classList.contains('rail'));
   check('Scroll → seekbar bangun lagi', !railWake);
+
+  // ── BACKUP GABUNGAN (F6) — regresi: dulu crash senyap (ReferenceError
+  // PN_LS_MODE/PN_LS_START/pnSetMode) gara-gara sisa referensi ke field Mode
+  // Urutan Otomatis yang sudah dihapus dari modul PNL, jadi tombol tampak
+  // "tidak berfungsi" (klik tanpa efek, tanpa error terlihat oleh user).
+  // Juga pastikan pnl.days (riwayat analisis akumulatif) IKUT ter-backup —
+  // sebelumnya cuma draft teks + arsip yang tersimpan, riwayat Harian tidak.
+  const backupBtnExists = await page.$('#g-backup-btn');
+  check('Tombol Backup Gabungan ada', !!backupBtnExists);
+  const [backupDownload] = await Promise.all([
+    page.waitForEvent('download', { timeout: 5000 }).catch(() => null),
+    page.evaluate(() => document.getElementById('g-backup-btn').click()),
+  ]);
+  await page.waitForTimeout(300);
+  check('Klik Backup Gabungan memicu unduhan (bukan crash senyap)', !!backupDownload);
+  if (backupDownload){
+    const backupPath = await backupDownload.path();
+    const backupJson = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    check('Backup berformat benar (app:berkah-aio)', backupJson.app === 'berkah-aio');
+    check('Backup menyertakan riwayat PNL (pnl.days)', backupJson.pnl && Object.keys(backupJson.pnl.days || {}).length > 0,
+      JSON.stringify(Object.keys((backupJson.pnl && backupJson.pnl.days) || {})));
+  }
 
   // ── TEMA ──
   await page.click('#g-theme-btn');

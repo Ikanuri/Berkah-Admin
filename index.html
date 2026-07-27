@@ -4781,8 +4781,7 @@ function collectSyncPayload(){
   if ($('g-sm-pnl').checked){
     mods.pnl = {
       raw: localStorage.getItem(PN_LS_RAW) || '',
-      mode: localStorage.getItem(PN_LS_MODE) || 'A',
-      start: localStorage.getItem(PN_LS_START) || '',
+      days: lsGet(PN_LS_DAYS, {}),
       arsip: lsGet(PN_LS_ARS, {}),
     };
   }
@@ -4807,8 +4806,20 @@ function applySyncPayload(msg){
   }
   if (m.pnl){
     if (m.pnl.raw !== undefined){ try { localStorage.setItem(PN_LS_RAW, m.pnl.raw); } catch(e){} $('pn-raw').value = m.pnl.raw; }
-    if (m.pnl.mode) { localStorage.setItem(PN_LS_MODE, m.pnl.mode); pnSetMode(m.pnl.mode); }
-    if (m.pnl.start){ localStorage.setItem(PN_LS_START, m.pnl.start); $('pn-start-date').value = m.pnl.start; }
+    if (m.pnl.days){
+      // gabung per tanggal — data masuk menimpa tanggal yang sama, tanggal lain utuh
+      // (pola sama seperti arsip di bawah)
+      Object.assign(pnDays, m.pnl.days);
+      lsSet(PN_LS_DAYS, pnDays);
+      pnAll = pnMaterializeAll();
+      pnFiltered = [...pnAll];
+      if (pnAll.length){
+        $('pn-filter-from').value = pnToInput(pnAll[0].tanggal);
+        $('pn-filter-to').value = pnToInput(pnAll[pnAll.length-1].tanggal);
+        pnRenderAll();
+        $('pn-result').style.display = '';
+      }
+    }
     if (m.pnl.arsip){
       // gabung per tanggal — data masuk menimpa tanggal yang sama, tanggal lain utuh
       Object.assign(pnArs, m.pnl.arsip);
@@ -4942,8 +4953,7 @@ async function backupAll(){
     },
     pnl: {
       raw: localStorage.getItem(PN_LS_RAW) || '',
-      mode: localStorage.getItem(PN_LS_MODE) || 'A',
-      start: localStorage.getItem(PN_LS_START) || '',
+      days: lsGet(PN_LS_DAYS, {}),
       arsip: lsGet(PN_LS_ARS, {}),
     },
     stok: { boss: {...skState, mode:'worker'} },   // aturan: tidak pernah 'boss'

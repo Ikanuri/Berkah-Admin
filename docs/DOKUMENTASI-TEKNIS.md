@@ -616,10 +616,25 @@ di markup/JS UI.
   data apa yang akan terkirim.
 
 ### Backup gabungan
-File `berkah-DD-MM-YY.json`: `{app:'berkah-aio', version:1, exported, nota, pnl
-(termasuk arsip), stok:{boss, mode:'worker'}}`. Export via Web Share (fallback
-unduh). Restore memakai jalur `applySyncPayload`; bagian stok butuh Mode Bos;
-dialog konfirmasi menampilkan perbandingan `lastAct` yang sama seperti sync.
+File `berkah-DD-MM-YY.json`: `{app:'berkah-aio', version:1, exported, nota,
+pnl:{raw, days, arsip}, stok:{boss, mode:'worker'}}`. Export via Web Share
+(fallback unduh). Restore memakai jalur `applySyncPayload`; bagian stok butuh
+Mode Bos; dialog konfirmasi menampilkan perbandingan `lastAct` yang sama
+seperti sync. `pnl.days` (riwayat Analisis, lihat §7) di-upsert per tanggal
+sama seperti `pnl.arsip` — tanggal yang masuk menimpa tanggal yang sama,
+tanggal lain di riwayat lokal tidak tersentuh.
+
+⚠ **`collectSyncPayload`/`applySyncPayload`/`backupAll` di `part-08-sync.js`
+adalah file TERPISAH dari modul PNL** (`part-06-pnl.js`) — kalau field/fungsi
+modul PNL diubah/dihapus (mis. Mode Urutan Otomatis dulu, fix N5→N6), WAJIB
+grep referensinya di `part-08-sync.js` juga. `const`/fungsi top-level di satu
+`<script>` block memang bisa diakses dari block lain (lexical environment
+dibagi antar `<script>` klasik dalam satu dokumen — bukan module scope), tapi
+itu artinya penghapusan di satu file bisa mematahkan file lain SENYAP
+(`ReferenceError` di dalam `async function` → Promise reject tanpa
+`.catch()` → tombol terlihat "tidak berfungsi" tanpa error yang kelihatan,
+lihat §12 N6). Tidak ada type-checker yang menangkap ini — hanya smoke test
+yang benar-benar mengklik tombolnya yang bisa.
 
 ### Seekbar scroll + jump
 Fixed kanan-tengah: tombol ⌃, track drag (pointer/touch), tombol ⌄. Sembunyi bila
@@ -659,7 +674,7 @@ Palet chart terpisah dari token UI (lihat §7).
 node tests/match-test.js        # mesin pencocokan: 43/43 (ekstrak dari index.html)
 # smoke butuh playwright + chromium:
 npm i playwright                # (browser sudah ada? set CHROMIUM_PATH)
-CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 85/85
+CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 89/89
 CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 21/21
 ```
 
@@ -707,6 +722,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | P9 | Font laporan PDF "kurang cocok, susah dibaca" | 3 Google Fonts dekoratif+monospace (Cormorant Garamond/DM Mono/Outfit), rawan gagal load sebelum `window.print()` (race condition) | satu font serif biasa "PT Serif" (fallback sistem Georgia) + label/angka pakai font sistem (`Arial`/`Consolas`), lihat §7 |
 | N4 | Dropdown produk tertutup sendiri saat mengetik di kotak cari ATAU scroll daftar produk | listener `scroll`/`resize` penutup dropdown (fix N3) tidak cek SUMBER event: scroll di dalam `#nk-cdfloat-res` (menggulir daftar) ikut dianggap "scroll halaman", dan `resize` dari keyboard HP muncul (saat kotak cari fokus) ikut dianggap "resize sungguhan" | scroll: abaikan kalau `e.target` ada di dalam `#nk-cdfloat`. resize: abaikan (reposisi saja, bukan tutup) kalau fokus sedang di dalam `#nk-cdfloat` — lihat §5 |
 | N5 | PNL: input hari baru MENGGANTI riwayat, bukan menambah; hasil Analisis (beda dari Arsip) hilang tiap reload | `pnAll = days` menimpa total riwayat dari isi kotak input saat itu saja — tidak pernah ditulis ke localStorage (beda dari Arsip yang sejak awal per-tanggal permanen) | riwayat per hari di-upsert ke `pnDays` (localStorage, per tanggal, sama pola dengan Arsip) — `pnAll` selalu materialisasi dari SEMUA tanggal tersimpan, bukan cuma batch terakhir. Mode Urutan Otomatis dihapus (tak cocok model upsert). Ditambah tombol hapus per tanggal (`pnDeleteDay`, lewat `pnApplyFilter()` supaya total/margin ikut recompute valid) — lihat §7 |
+| N6 | Tombol Backup Gabungan (⬇ Export) di Pengaturan "tidak berfungsi" — klik tanpa efek, tanpa error terlihat | Sisa referensi ke `PN_LS_MODE`/`PN_LS_START`/`pnSetMode`/`#pn-start-date` di `part-08-sync.js` (`backupAll`, `collectSyncPayload`, `applySyncPayload`) yang sudah dihapus dari modul PNL saat Mode Urutan Otomatis dibuang (fix N5) — `ReferenceError` di dalam `async function backupAll()` bikin Promise-nya reject tanpa `.catch()`, jadi crash-nya senyap total (unhandled rejection, tak ada toast/pesan). Bonus bug: payload backup/sync juga BELUM menyertakan `pnl.days` (riwayat Analisis akumulatif yang baru) — hanya draft teks + arsip yang ter-backup | hapus semua sisa referensi ke field yang sudah tidak ada; ganti payload PNL jadi `{raw, days: pnDays, arsip: pnArs}` di ketiga fungsi; `applySyncPayload` upsert `pnDays` per tanggal (pola sama dengan arsip) lalu `pnAll = pnMaterializeAll()` + render ulang |
 | P10 | Hasil Analisis PNL hilang tiap reload — user kira "tidak bisa disimpan, cuma read-only saat itu" | `pnAll`/`pnFiltered` cuma variabel in-memory; hanya `brk-pnl-raw` (teks mentah) yang persisten, tampilan tabel/kartu tidak ikut | `pnInit()` panggil `pnProcess(true)` (senyap) kalau ada raw tersimpan — reproses otomatis, lihat §7 |
 
 ### Checklist debug cepat
@@ -715,7 +731,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 3. `skSuppress` di-set sebelum menulis output programatik?
 4. Ada `const/let` dipakai sebelum deklarasi (IIFE awal)?
 5. Ada class CSS dipakai dua makna? (pelajaran G3)
-6. Test: 43/43, 85/85, 21/21 masih hijau?
+6. Test: 43/43, 89/89, 21/21 masih hijau?
 
 ---
 
@@ -755,7 +771,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 >    harga sampai 46× secara diam-diam dan salingnya menutupi di total. Mesin baru
 >    boleh bilang "tidak ketemu" — dan itu fitur, bukan kelemahan.
 >
-> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **85/85**
+> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **89/89**
 > smoke desktop, **21/21** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
 > turun, kembalikan dulu sebelum melangkah.
 >
