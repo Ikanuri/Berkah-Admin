@@ -81,13 +81,12 @@ function check(name, cond, extra){
   const notaStatus = await page.textContent('#nk-status');
   check('Status nota tampil total', /Rp/.test(notaStatus), notaStatus);
 
-  // ── PNL ──
+  // ── PNL: input per-hari AKUMULATIF (fix — dulu replace, sekarang nambah) ──
   await page.click('[data-mod="pnl"]');
   await page.waitForTimeout(300);
-  await page.click('#pn-mode-b');
-  const modeB = await page.$eval('#pn-mode-b', el => el.classList.contains('active'));
-  check('PNL Mode B bisa diaktifkan (fix P1)', modeB);
-  const pnlData = `#tanggal 2026-06-01
+
+  // hari pertama diproses SENDIRI (mensimulasikan input harian terpisah)
+  await page.fill('#pn-raw', `#tanggal 2026-06-01
 #pengeluaran
 350000 Uang Indah
 #prive
@@ -95,23 +94,53 @@ function check(name, cond, extra){
 #cash 5628000 + 190000 saldo
 #receh 21000
 #income 7497200
-#kulakan 5808330
+#kulakan 5808330`);
+  await page.click('#pn-process-btn');
+  await page.waitForTimeout(600);
+  let pnRows = await page.$$('#pn-tbl-harian tbody tr');
+  check('PNL: hari pertama tersimpan (1 baris + TOTAL)', pnRows.length === 2, pnRows.length + ' baris');
+  const pnStatus1 = await page.textContent('#pn-status');
+  check('PNL: status bilang "disimpan" (bukan cuma "diproses" sekali pakai)', /1 hari disimpan/.test(pnStatus1), pnStatus1);
 
-#tanggal 2026-06-02
+  // hari kedua diproses TERPISAH — harus NAMBAH ke riwayat, bukan mengganti hari pertama
+  await page.fill('#pn-raw', `#tanggal 2026-06-02
 #cash 4100000
 #receh 15000
 #income 5000000
-#kulakan 3900000`;
-  await page.fill('#pn-raw', pnlData);
+#kulakan 3900000`);
   await page.click('#pn-process-btn');
   await page.waitForTimeout(600);
-  const pnStatus = await page.textContent('#pn-status');
-  check('PNL memproses 2 hari', /2 hari/.test(pnStatus), pnStatus);
-  // P2: cash 5628000+190000 = 5818000
-  const harian = await page.textContent('#pn-tbl-harian');
+  pnRows = await page.$$('#pn-tbl-harian tbody tr');
+  check('PNL: proses hari kedua MENAMBAH, bukan replace (2 hari + TOTAL)', pnRows.length === 3, pnRows.length + ' baris');
+  let harian = await page.textContent('#pn-tbl-harian');
   check('#cash multi-angka dijumlah (fix P2)', harian.includes('5.818.000'), '5.818.000 ada di tabel');
+  check('PNL: hari pertama MASIH ADA setelah proses hari kedua', harian.includes('7.497.200'), 'income hari 1 (7.497.200) masih di tabel');
   const sumCards = await page.$$eval('#pn-sum-cards .sum-card', els => els.length);
   check('8 kartu ringkasan', sumCards === 8);
+  let totalIncomeCard = await page.$eval('#pn-sum-cards .sum-card:first-child .sum-val', el => el.textContent);
+  check('PNL: kartu Total Income = gabungan 2 hari (7.497.200+5.000.000)', totalIncomeCard.includes('12.497.200'), totalIncomeCard);
+
+  // hapus SATU hari lewat tombol ✕ baru di tabel Harian → hitungan harus recompute valid
+  await page.click('#pn-tbl-harian [data-pndel]');   // baris teratas = tanggal paling awal (01 Jun)
+  await page.waitForTimeout(200);
+  if (await page.$eval('#g-confirm-overlay', el => el.classList.contains('open'))) await page.click('#g-confirm-ok');
+  await page.waitForTimeout(400);
+  pnRows = await page.$$('#pn-tbl-harian tbody tr');
+  check('PNL: hapus 1 hari → baris berkurang (1 hari + TOTAL)', pnRows.length === 2, pnRows.length + ' baris');
+  harian = await page.textContent('#pn-tbl-harian');
+  totalIncomeCard = await page.$eval('#pn-sum-cards .sum-card:first-child .sum-val', el => el.textContent);
+  check('PNL: hitungan TETAP VALID setelah hapus (total income = sisa hari kedua saja, hari pertama hilang total)',
+    totalIncomeCard.includes('5.000.000') && !harian.includes('7.497.200'), totalIncomeCard);
+
+  // reload → riwayat harus tetap tampil otomatis (persisten per-tanggal, bukan replay draft teks)
+  await page.reload();
+  await page.waitForTimeout(700);
+  await page.click('[data-mod="pnl"]');
+  await page.waitForTimeout(300);
+  const pnResultAfterReload = await page.$eval('#pn-result', el => getComputedStyle(el).display !== 'none');
+  check('PNL: riwayat tampil otomatis setelah reload (tanpa klik Proses lagi)', pnResultAfterReload);
+  const harianAfterReload = await page.textContent('#pn-tbl-harian');
+  check('PNL: hari yang sudah dihapus TETAP hilang setelah reload', !harianAfterReload.includes('7.497.200') && harianAfterReload.includes('5.000.000'));
 
   // ── LAPORAN PDF ANALISIS: font & kontras kartu gelap ──
   // fix root-cause: print-color-adjust dulu tidak diset → latar kartu gelap

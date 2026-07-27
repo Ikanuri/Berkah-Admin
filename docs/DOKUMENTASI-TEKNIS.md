@@ -124,9 +124,8 @@ Setiap aturan lahir dari bug nyata (lihat §12):
 | `brk-nota-hist` | Nota | riwayat nota (maks 100, terbaru dulu) |
 | `brk-nota-counter` | Nota | counter nomor nota (naik saat "Simpan ke Riwayat") |
 | `brk-nota-draft` | Nota | `{input, ket, num}` — draft auto-save |
-| `brk-pnl-raw` | PNL | teks mentah (auto-save, debounce 500ms) — di-reproses OTOMATIS saat `pnInit()` kalau ada isi, supaya tampilan Analisis (kartu+tabel) tidak hilang setelah reload |
-| `brk-pnl-mode` | PNL | `'A' \| 'B'` |
-| `brk-pnl-start` | PNL | tanggal mulai Mode A |
+| `brk-pnl-raw` | PNL | draft teks kotak input saja (auto-save, debounce 500ms) — BUKAN sumber tampilan Analisis, cuma draft ketikan |
+| `brk-pnl-days` | PNL | **riwayat permanen per tanggal** — `{ 'YYYY-MM-DD': {income,kulakan,cash,receh,totalPengeluaran,totalPrive,rincianPengeluaran,rincianPrive,gross,netPos,marginP,marginC} }`. Setiap proses = upsert per tanggal (lihat §7) |
 | `brk-pnl-arsip` | PNL | `{ 'YYYY-MM-DD': [{j:'p'\|'v', amt:Number, ket:String}] }` |
 | `stok-boss-data` | Stok | state bos **(key WARISAN app lama — jangan ganti, zero-migration)**. Field baru: `outCatEx: string[]` (§8), `lastAct: {ts, desc}` (§8) |
 | `stok-worker-data` | Stok | state karyawan. Field baru: `lastAct: {ts, desc}` (§8) |
@@ -309,11 +308,12 @@ Setiap perubahan mesin wajib mempertahankan angka ini.
 ## 7. Modul 2 — PNL Analyzer + Arsip
 
 ### Parser
-- **Mode A**: blok dipisah baris kosong ganda; tanggal = tanggalMulai + indeks blok.
-  Blok dilewati **tetap menggeser tanggal** → preview per-blok ditampilkan dengan
-  peringatan (mitigasi P4).
-- **Mode B**: blok dipisah kemunculan `#tanggal YYYY-MM-DD` (mis. `2026-07-22`).
-  `pnParseTanggal` split by `-`, urutan y-m-d — bukan lagi `DD/MM/YYYY`.
+- Satu-satunya mode: blok dipisah kemunculan `#tanggal YYYY-MM-DD` (mis.
+  `2026-07-22`). `pnParseTanggal` split by `-`, urutan y-m-d.
+  (**"Mode Urutan Otomatis"/Mode A** — blok dipisah baris kosong ganda,
+  tanggal = tanggalMulai+indeks — sudah **dihapus**: tidak cocok dengan model
+  penyimpanan per-hari upsert di bawah, dan `#tanggal` per blok sudah lebih
+  aman/eksplisit. Lihat §12 N5.)
 - `#cash` menjumlah **semua angka di barisnya** (`#cash 5628000 + 190000 saldo` →
   5.818.000) — by design (fix P2).
 - `#gross/#net_cash/#margin*` di input diabaikan (dihitung ulang).
@@ -322,20 +322,40 @@ Setiap perubahan mesin wajib mempertahankan angka ini.
   margin harian.
 - Blok valid: punya tanggal dan minimal satu dari income/kulakan/cash.
 
-### Persistensi hasil Analisis (fix — dulu hilang tiap reload)
-`pnAll`/`pnFiltered` (hasil olahan: kartu ringkasan, tabel harian/mingguan/
-bulanan/rincian) HANYA variabel in-memory, tidak pernah ditulis ke
-localStorage — hanya `brk-pnl-raw` (teks mentah) yang persisten. Sebelum fix
-ini, itu berarti tiap reload/tutup-app, tampilan Analisis kembali kosong
-(`#pn-result` balik ke `display:none` default template) sampai user pencet
-**▶ Proses Data** lagi — padahal input mentahnya sendiri sudah aman
-tersimpan. Fix: `pnInit()` memanggil `pnProcess(true)` (mode senyap — tanpa
-`scrollIntoView`, lihat parameter `silent` di `pnProcess(silent)`) kalau ada
-`brk-pnl-raw` tersimpan, sehingga tampilan Analisis otomatis di-render ulang
-dari raw yang sama — idempoten, hasilnya identik dengan reproses manual.
-**Penting**: listener tombol jadi `() => pnProcess()` (bukan `pnProcess`
-langsung) — kalau tidak, `click` event object ikut jadi argumen `silent`
-(objek = truthy) dan klik manual pun kehilangan scroll-nya.
+### Riwayat permanen per hari — upsert, akumulatif (fix N5)
+Sebelumnya `pnProcess()` melakukan `pnAll = days` — **mengganti total**
+riwayat dengan isi kotak input saat itu saja. Kalau user menempel HANYA hari
+ini (tanpa menyalin ulang hari-hari sebelumnya), hari-hari lama seolah
+"hilang" dari tabel Harian — padahal maksudnya menambah, bukan mengganti.
+
+Sekarang setiap hari yang valid di-**upsert** ke `pnDays[ds] = {income,
+kulakan, cash, receh, totalPengeluaran, totalPrive, rincianPengeluaran,
+rincianPrive, gross, netPos, marginP, marginC}` (`ds` = `pnToInput(tanggal)`,
+dikanonisasi — `"2026-7-1"` dan `"2026-07-01"` jadi kunci yang SAMA), lalu
+`lsSet(PN_LS_DAYS, pnDays)`. `pnAll` **selalu dimaterialisasi dari SEMUA
+tanggal** di `pnDays` (`pnMaterializeAll()`, `Object.keys(...).sort()` —
+YYYY-MM-DD zero-padded, sort leksikal = sort kronologis), bukan cuma batch
+yang baru diproses. Efeknya:
+- Proses hari demi hari (satu blok per submit) → tabel Harian/filter
+  Mingguan/Bulanan/Kustom **akumulatif otomatis**, bukan replace.
+- Proses ulang tanggal yang SAMA → hari itu saja yang ter-timpa (koreksi),
+  hari lain tidak tersentuh (idempoten, pola sama seperti Arsip di bawah).
+- Reload halaman: `pnInit()` langsung `pnAll = pnMaterializeAll()` dan
+  render — **tidak lagi bergantung mereproses ulang teks draft** (`brk-pnl-raw`
+  cuma draft kotak ketik, bukan sumber data lagi).
+- **✕ Kosongkan Input** cuma menghapus draft kotak ketik — riwayat tersimpan
+  TIDAK ikut terhapus (beda dari perilaku lama yang menyembunyikan `#pn-result`
+  juga).
+
+### Hapus per tanggal (Harian) — hitungan tetap valid
+Tombol ✕ per baris (`data-pndel`, kelas `.ar-del-date` dipakai ulang) →
+`pnDeleteDay(ds)`: `delete pnDays[ds]` + persist, lalu `pnAll =
+pnMaterializeAll()` dan `pnApplyFilter()` (bukan `pnRenderAll()` langsung) —
+supaya filter tanggal yang sedang aktif tetap dihormati DAN semua kartu/tabel
+(total, margin tertimbang, mingguan/bulanan) dihitung ulang dari `pnFiltered`
+yang baru, bukan angka lama yang dicache. **Scope sengaja dibatasi**: arsip
+Pengeluaran/Prive (`pnArs`) tanggal itu TIDAK ikut terhapus — itu ledger
+terpisah, sudah punya tombol hapus sendiri di tab Arsip (`ar-del-date`).
 
 ### Arsip pengeluaran & prive
 - **Auto-akumulasi**: tiap `pnProcess` sukses, entri per hari ditulis ke
@@ -618,7 +638,7 @@ Palet chart terpisah dari token UI (lihat §7).
 node tests/match-test.js        # mesin pencocokan: 43/43 (ekstrak dari index.html)
 # smoke butuh playwright + chromium:
 npm i playwright                # (browser sudah ada? set CHROMIUM_PATH)
-CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 78/78
+CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 85/85
 CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 21/21
 ```
 
@@ -627,8 +647,10 @@ Cakupan smoke: upload & persistensi CSV, parse 43 baris, dropdown+search+kamus
 scroll-di-dalam-daftar/resize-keyboard-saat-fokus TIDAK menutup dropdown —
 regresi bug nyata),
 kalkulator (modal, terpusat, **ukuran stabil setelah ketik — regresi bug nyata**),
-generate nota, PNL mode B + `#cash` multi-angka, laporan PDF Analisis (kontras
-kartu gelap tercetak benar + font PT Serif), arsip auto-isi + donut + legend +
+generate nota, PNL `#cash` multi-angka, **proses hari-per-hari akumulatif
+(bukan replace) + hapus per tanggal dengan hitungan tetap valid + riwayat
+tampil otomatis setelah reload — regresi bug nyata**, laporan PDF Analisis
+(kontras kartu gelap tercetak benar + font PT Serif), arsip auto-isi + donut + legend +
 sorot + search + toggle jenis + laporan PDF Arsip (opsi sama, konten sesuai
 data Arsip), stok add/toggle/output-dua-arah/minus-freeze, gesture 5-tap + PIN +
 `mode:'worker'` di storage, seekbar collapse/tembus-klik/bangun, nav bawah,
@@ -663,6 +685,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | P8 | Kartu KPI gelap (Total Income/Kulakan) pudar di laporan PDF | browser tidak mencetak `background-color` secara default kecuali user centang "background graphics" — teks terang-untuk-latar-gelap jadi nyaris putih-di-atas-putih | `print-color-adjust:exact` dkk di `pnReportCSS()` (lihat §7) |
 | P9 | Font laporan PDF "kurang cocok, susah dibaca" | 3 Google Fonts dekoratif+monospace (Cormorant Garamond/DM Mono/Outfit), rawan gagal load sebelum `window.print()` (race condition) | satu font serif biasa "PT Serif" (fallback sistem Georgia) + label/angka pakai font sistem (`Arial`/`Consolas`), lihat §7 |
 | N4 | Dropdown produk tertutup sendiri saat mengetik di kotak cari ATAU scroll daftar produk | listener `scroll`/`resize` penutup dropdown (fix N3) tidak cek SUMBER event: scroll di dalam `#nk-cdfloat-res` (menggulir daftar) ikut dianggap "scroll halaman", dan `resize` dari keyboard HP muncul (saat kotak cari fokus) ikut dianggap "resize sungguhan" | scroll: abaikan kalau `e.target` ada di dalam `#nk-cdfloat`. resize: abaikan (reposisi saja, bukan tutup) kalau fokus sedang di dalam `#nk-cdfloat` — lihat §5 |
+| N5 | PNL: input hari baru MENGGANTI riwayat, bukan menambah; hasil Analisis (beda dari Arsip) hilang tiap reload | `pnAll = days` menimpa total riwayat dari isi kotak input saat itu saja — tidak pernah ditulis ke localStorage (beda dari Arsip yang sejak awal per-tanggal permanen) | riwayat per hari di-upsert ke `pnDays` (localStorage, per tanggal, sama pola dengan Arsip) — `pnAll` selalu materialisasi dari SEMUA tanggal tersimpan, bukan cuma batch terakhir. Mode Urutan Otomatis dihapus (tak cocok model upsert). Ditambah tombol hapus per tanggal (`pnDeleteDay`, lewat `pnApplyFilter()` supaya total/margin ikut recompute valid) — lihat §7 |
 | P10 | Hasil Analisis PNL hilang tiap reload — user kira "tidak bisa disimpan, cuma read-only saat itu" | `pnAll`/`pnFiltered` cuma variabel in-memory; hanya `brk-pnl-raw` (teks mentah) yang persisten, tampilan tabel/kartu tidak ikut | `pnInit()` panggil `pnProcess(true)` (senyap) kalau ada raw tersimpan — reproses otomatis, lihat §7 |
 
 ### Checklist debug cepat
@@ -671,7 +694,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 3. `skSuppress` di-set sebelum menulis output programatik?
 4. Ada `const/let` dipakai sebelum deklarasi (IIFE awal)?
 5. Ada class CSS dipakai dua makna? (pelajaran G3)
-6. Test: 43/43, 78/78, 21/21 masih hijau?
+6. Test: 43/43, 85/85, 21/21 masih hijau?
 
 ---
 
@@ -711,7 +734,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 >    harga sampai 46× secara diam-diam dan salingnya menutupi di total. Mesin baru
 >    boleh bilang "tidak ketemu" — dan itu fitur, bukan kelemahan.
 >
-> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **78/78**
+> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **85/85**
 > smoke desktop, **21/21** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
 > turun, kembalikan dulu sebelum melangkah.
 >

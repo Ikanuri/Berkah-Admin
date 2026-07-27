@@ -100,22 +100,30 @@ Tempel catatan harian → dapat tabel untung-rugi + laporan cantik.
 - `#gross`, `#margin` dll **tidak perlu ditulis** — dihitung otomatis.
 - Format tanggal: `YYYY-MM-DD` (mis. `2026-07-01`).
 
-### Dua mode input
-- **Mode Urutan Otomatis** — tanpa `#tanggal`; isi tanggal mulai, tiap blok
-  (dipisah 2 baris kosong) = satu hari berurutan.
-  ⚠ Cek *preview tanggal per blok* setelah proses — kalau ada baris kosong
-  nyasar, tanggal bisa bergeser dan aplikasi akan memperingatkan.
-- **Mode dengan #tanggal** — tiap hari diawali `#tanggal`, lebih aman.
+### Input harian — otomatis tersimpan & bertambah
+Tekan **▶ Proses & Simpan** → kartu ringkasan + tab **Harian / Mingguan /
+Bulanan / Rincian** + filter rentang tanggal + **⬇ CSV** + **📄 Laporan PDF**
+(buka → Download PDF).
 
-Tekan **▶ Proses Data** → kartu ringkasan + tab **Harian / Mingguan / Bulanan /
-Rincian** + filter rentang tanggal + **⬇ CSV** + **📄 Laporan PDF** (buka →
-Download PDF).
+**Boleh tempel satu hari saja tiap kali proses** — tidak perlu menyalin ulang
+hari-hari sebelumnya. Setiap hari yang diproses **otomatis tersimpan
+permanen** dan **bertambah** ke tabel Harian (dan ikut terhitung di filter
+Mingguan/Bulanan/Kustom) — bukan menggantikan hari-hari yang sudah ada.
+Kalau tanggal yang sama diproses lagi (misal ada salah ketik), hari itu saja
+yang diperbarui — hari lain tidak ikut berubah.
+
+Salah input? Tekan **✕** di ujung baris tabel Harian untuk menghapus data
+hari itu — kartu ringkasan & total di semua tab langsung dihitung ulang
+tanpa hari tersebut. (Arsip Pengeluaran/Prive tanggal itu tidak ikut
+terhapus — hapus lewat tab Arsip kalau memang perlu.)
+
+**✕ Kosongkan Input** cuma mengosongkan kotak ketik untuk hari berikutnya —
+riwayat yang sudah tersimpan tidak ikut hilang.
 
 Arti angka: **Gross** = income − kulakan · **Net Position** = cash − kulakan ·
-**Margin** dihitung tertimbang dari total (target ≥15% / ≥0%). Input Anda
-tersimpan otomatis — tutup app tidak hilang, dan hasil analisisnya (kartu +
-tabel) **otomatis tampil lagi** begitu app dibuka ulang, tanpa perlu pencet
-Proses Data lagi.
+**Margin** dihitung tertimbang dari total (target ≥15% / ≥0%). Riwayat
+tersimpan permanen — tutup app tidak hilang, dan otomatis tampil lagi begitu
+app dibuka ulang, tanpa perlu pencet Proses lagi.
 
 ### 🗄 Sub-tab ARSIP — jejak pengeluaran & prive
 Setiap kali Anda tekan Proses Data, semua baris `#pengeluaran` dan `#prive`

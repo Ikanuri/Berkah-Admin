@@ -325,9 +325,6 @@ html[data-theme="dark"] .calc-head{background:#1B1A19;color:var(--ink);}
 .empty-sub{font-size:12px;margin-top:4px;}
 
 /* ── PNL ── */
-.mode-toggle{display:flex;gap:2px;background:var(--bg2);border:1px solid var(--border);border-radius:100px;padding:3px;width:fit-content;margin-bottom:14px;}
-.mode-btn{padding:6px 14px;border:none;border-radius:100px;background:transparent;font-size:12px;font-weight:600;color:var(--ink3);transition:all .18s;}
-.mode-btn.active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow);}
 .sum-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
 @media(max-width:760px){.sum-cards{grid-template-columns:repeat(2,1fr);}}
 .sum-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:13px 14px 11px;}
@@ -772,23 +769,12 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
       <div class="panel-chip" id="pn-autosave-chip">tersimpan otomatis</div>
     </div>
     <div class="panel-body">
-      <div class="mode-toggle">
-        <button class="mode-btn active" id="pn-mode-a">Mode Urutan Otomatis</button>
-        <button class="mode-btn" id="pn-mode-b">Mode dengan #tanggal</button>
-      </div>
-      <div id="pn-panel-a">
-        <div class="field-row">
-          <div class="field" style="max-width:200px;"><span class="field-label">Tanggal Mulai (blok pertama)</span><input type="date" class="inp" id="pn-start-date"></div>
-        </div>
-        <div class="hint" style="margin:0 0 8px;">Setiap blok = 1 hari berurutan. Blok dipisah <span class="hl">baris kosong ganda</span>. Hati-hati baris kosong nyasar — cek preview tanggal setelah proses.</div>
-      </div>
-      <div id="pn-panel-b" style="display:none;">
-        <div class="hint" style="margin:0 0 8px;">Setiap hari diawali <span class="hl">#tanggal YYYY-MM-DD</span> (mis. 2026-07-22). Baris kosong bebas.</div>
-      </div>
-      <textarea class="inp" id="pn-raw" style="width:100%;height:260px;" placeholder="#pengeluaran&#10;350000 Uang Indah&#10;#prive&#10;66200 Belanja Indomaret&#10;&#10;#cash 5628000 + 190000 saldo&#10;#receh 21000&#10;#income 7497200&#10;#kulakan 5808330"></textarea>
+      <div class="hint" style="margin:0 0 8px;">Setiap hari diawali <span class="hl">#tanggal YYYY-MM-DD</span> (mis. 2026-07-22). Baris kosong bebas.
+      Tiap kali diproses, data hari itu <b>otomatis tersimpan &amp; ditambahkan</b> ke riwayat di bawah (bukan menggantikan hari lain) — proses ulang tanggal yang sama untuk mengoreksi.</div>
+      <textarea class="inp" id="pn-raw" style="width:100%;height:260px;" placeholder="#tanggal 2026-07-22&#10;#pengeluaran&#10;350000 Uang Indah&#10;#prive&#10;66200 Belanja Indomaret&#10;#cash 5628000 + 190000 saldo&#10;#receh 21000&#10;#income 7497200&#10;#kulakan 5808330"></textarea>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-        <button class="btn primary" id="pn-process-btn" style="flex:1;min-width:160px;">▶ Proses Data</button>
-        <button class="btn" id="pn-clear-btn">✕ Bersihkan</button>
+        <button class="btn primary" id="pn-process-btn" style="flex:1;min-width:160px;">▶ Proses & Simpan</button>
+        <button class="btn" id="pn-clear-btn">✕ Kosongkan Input</button>
       </div>
       <div id="pn-status" style="margin-top:10px;font-size:12.5px;font-family:var(--mono);"></div>
       <div id="pn-blok-preview" class="blok-preview" style="display:none;"></div>
@@ -2467,14 +2453,23 @@ function nkInit(){
    PDF via Blob URL (P6), auto-save (P7).
    ═══════════════════════════════════════════════════════ */
 const PN_LS_RAW   = 'brk-pnl-raw';
-const PN_LS_MODE  = 'brk-pnl-mode';
-const PN_LS_START = 'brk-pnl-start';
 const PN_LS_ARS   = 'brk-pnl-arsip';   // { 'YYYY-MM-DD': [{j:'p'|'v', amt, ket}] }
+// setiap hari yang diproses TERSIMPAN PERMANEN per tanggal (upsert — proses
+// ulang tanggal yang sama akan MENGGANTI hari itu saja, hari lain tak
+// tersentuh). pnAll SELALU dimaterialisasi dari SEMUA tanggal di sini, jadi
+// input baru otomatis MENAMBAH ke riwayat, bukan menggantikan seluruh tabel.
+const PN_LS_DAYS  = 'brk-pnl-days';    // { 'YYYY-MM-DD': {income,kulakan,cash,receh,totalPengeluaran,totalPrive,rincianPengeluaran,rincianPrive,gross,netPos,marginP,marginC} }
 
-let pnMode = 'A';
 let pnAll = [];
 let pnFiltered = [];
 let pnArs = lsGet(PN_LS_ARS, {});
+let pnDays = lsGet(PN_LS_DAYS, {});
+function pnMaterializeAll(){
+  return Object.keys(pnDays).sort().map(ds => {
+    const [y,m,d] = ds.split('-').map(Number);
+    return Object.assign({}, pnDays[ds], { tanggal: new Date(y, m-1, d, 0, 0, 0, 0) });
+  });
+}
 
 // ── PARSER ──
 function pnParseAngka(str){
@@ -2491,21 +2486,18 @@ function pnParseTanggal(str){
 }
 function pnSplitBloks(raw){
   raw = raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
-  if (pnMode === 'B'){
-    const lines = raw.split('\n');
-    const bloks = [];
-    let cur = [];
-    for (const line of lines){
-      if (/^#tanggal\s+/i.test(line.trim()) && cur.length){
-        bloks.push(cur.join('\n').trim());
-        cur = [];
-      }
-      cur.push(line);
+  const lines = raw.split('\n');
+  const bloks = [];
+  let cur = [];
+  for (const line of lines){
+    if (/^#tanggal\s+/i.test(line.trim()) && cur.length){
+      bloks.push(cur.join('\n').trim());
+      cur = [];
     }
-    if (cur.length) bloks.push(cur.join('\n').trim());
-    return bloks.filter(b => b.length);
+    cur.push(line);
   }
-  return raw.split(/\n{2,}/).map(b => b.trim()).filter(b => b.length);
+  if (cur.length) bloks.push(cur.join('\n').trim());
+  return bloks.filter(b => b.length);
 }
 function pnParseBlok(lines){
   const data = {
@@ -2577,70 +2569,80 @@ function pnProcess(silent){
   const raw = $('pn-raw').value;
   if (!raw.trim()){ pnStatus('Paste raw data dulu.', 'err'); return; }
   const bloks = pnSplitBloks(raw);
-  if (!bloks.length){ pnStatus('Tidak ada blok terdeteksi.', 'err'); return; }
+  if (!bloks.length){ pnStatus('Tidak ada blok terdeteksi (mulai tiap hari dengan #tanggal YYYY-MM-DD).', 'err'); return; }
 
-  let startD = null;
-  if (pnMode === 'A'){
-    const sd = $('pn-start-date').value;
-    if (!sd){ pnStatus('Isi tanggal mulai dulu.', 'err'); return; }
-    const [y,m,d] = sd.split('-').map(Number);
-    startD = new Date(y, m-1, d, 0, 0, 0, 0);
-  }
-
-  const days = [];
   const preview = [];
+  const touchedDs = [];
   let skip = 0;
   bloks.forEach((blok, i) => {
     const parsed = pnParseBlok(blok.split('\n'));
-    if (pnMode === 'A'){
-      const d = new Date(startD);
-      d.setDate(d.getDate() + i);
-      parsed.tanggal = d;
-    }
     const firstLine = blok.split('\n')[0].slice(0, 38);
     if (!parsed.tanggal || (!parsed.income && !parsed.kulakan && !parsed.cash)){
       skip++;
       preview.push('⚠ blok '+(i+1)+' DILEWATI — "'+firstLine+'"');
       return;
     }
-    preview.push('blok '+(i+1)+' → '+pnHari(parsed.tanggal)+' '+pnFmtDate(parsed.tanggal)+' · income '+fmtRp(parsed.income));
-    days.push(parsed);
+    // upsert per tanggal (kunci dikanonisasi via pnToInput — "2026-7-1" &
+    // "2026-07-01" jadi hari yang SAMA) — hari lain di riwayat tidak tersentuh.
+    const ds = pnToInput(parsed.tanggal);
+    const { tanggal, ...rest } = parsed;
+    pnDays[ds] = rest;
+    touchedDs.push(ds);
+    preview.push('blok '+(i+1)+' → '+pnHari(parsed.tanggal)+' '+pnFmtDate(parsed.tanggal)+' · income '+fmtRp(parsed.income)+' (tersimpan)');
   });
-  days.sort((a,b) => a.tanggal - b.tanggal);
-  pnAll = days;
-  pnFiltered = [...days];
 
-  if (!days.length){ pnStatus('Tidak ada data valid.', 'err'); return; }
+  if (!touchedDs.length){ pnStatus('Tidak ada data valid.', 'err'); return; }
+  lsSet(PN_LS_DAYS, pnDays);
 
   // ── AUTO-ARSIP: entri #pengeluaran & #prive tersimpan permanen per tanggal ──
   // Hari yang sama diproses ulang → entri hari itu ditimpa (idempoten, bebas duplikat)
   let arsN = 0;
-  days.forEach(d => {
+  touchedDs.forEach(ds => {
+    const d = pnDays[ds];
     const entries = [];
     d.rincianPengeluaran.forEach(it => entries.push({ j:'p', amt:it.jumlah, ket:it.ket }));
     d.rincianPrive.forEach(it => entries.push({ j:'v', amt:it.jumlah, ket:it.ket }));
-    pnArs[pnToInput(d.tanggal)] = entries;
+    pnArs[ds] = entries;
     arsN += entries.length;
   });
   lsSet(PN_LS_ARS, pnArs);
 
-  pnStatus('✓ '+days.length+' hari diproses'+(skip ? ' · '+skip+' blok dilewati' : '')+
-    (arsN ? ' · '+arsN+' entri masuk arsip' : '')+'.', 'ok');
+  // riwayat SELALU dimaterialisasi dari SEMUA tanggal tersimpan — jadi hari
+  // yang baru diproses NAMBAH ke tabel, bukan menggantikan hari-hari lain.
+  pnAll = pnMaterializeAll();
+  pnFiltered = [...pnAll];
 
-  // P4: preview tanggal per blok — deteksi geser tanggal Mode A
+  pnStatus('✓ '+touchedDs.length+' hari disimpan'+(skip ? ' · '+skip+' blok dilewati' : '')+
+    (arsN ? ' · '+arsN+' entri masuk arsip' : '')+' · total '+pnAll.length+' hari di riwayat.', 'ok');
+
   const pv = $('pn-blok-preview');
   pv.style.display = '';
   pv.innerHTML = preview.map(esc).join('<br>');
-  if (pnMode === 'A' && skip > 0){
-    pv.innerHTML = '<b style="color:var(--amber);">Perhatian: ada blok dilewati di Mode A — tanggal blok setelahnya ikut bergeser. Cek daftar di bawah.</b><br>' + pv.innerHTML;
-  }
 
-  $('pn-filter-from').value = pnToInput(days[0].tanggal);
-  $('pn-filter-to').value = pnToInput(days[days.length-1].tanggal);
+  $('pn-filter-from').value = pnToInput(pnAll[0].tanggal);
+  $('pn-filter-to').value = pnToInput(pnAll[pnAll.length-1].tanggal);
   $('pn-filter-info').textContent = '';
   pnRenderAll();
   $('pn-result').style.display = '';
   if (!silent) $('pn-result').scrollIntoView({behavior:'smooth', block:'start'});
+}
+// hapus satu hari dari riwayat (tombol ✕ di tabel Harian) — arsip Pengeluaran/
+// Prive TIDAK ikut terhapus (itu ledger sendiri, sudah punya tombol hapus di
+// tab Arsip) supaya cakupannya jelas & tidak mengejutkan.
+function pnDeleteDay(ds){
+  delete pnDays[ds];
+  lsSet(PN_LS_DAYS, pnDays);
+  pnAll = pnMaterializeAll();
+  if (!pnAll.length){
+    pnFiltered = [];
+    $('pn-result').style.display = 'none';
+    pnStatus('', '');
+    return;
+  }
+  // pertahankan filter tanggal yang sedang aktif — total/margin dihitung
+  // ulang dari data yang tersisa (pnApplyFilter derive semuanya dari pnAll).
+  pnApplyFilter();
+  showToast('Data tanggal ' + ds + ' dihapus dari riwayat');
 }
 
 // ── FILTER (selalu lokal) ──
@@ -2690,9 +2692,10 @@ function pnRenderSummary(data){
     '<div class="sum-sub">'+c.s+'</div></div>').join('');
 }
 function pnRenderHarian(data){
-  let h = '<thead><tr>' + ['TGL','HARI','INCOME','KULAKAN','PENGELUARAN','PRIVE','CASH','RECEH','GROSS','NET POS','MARGIN%','CASH%']
-    .map(c => '<th class="'+(['TGL','HARI'].includes(c)?'':'num')+'">'+c+'</th>').join('') + '</tr></thead><tbody>';
+  let h = '<thead><tr>' + ['TGL','HARI','INCOME','KULAKAN','PENGELUARAN','PRIVE','CASH','RECEH','GROSS','NET POS','MARGIN%','CASH%','']
+    .map(c => '<th class="'+(['TGL','HARI',''].includes(c)?'':'num')+'">'+c+'</th>').join('') + '</tr></thead><tbody>';
   data.forEach(d => {
+    const ds = pnToInput(d.tanggal);
     h += '<tr><td style="font-family:var(--mono);font-size:11.5px;">'+pnFmtDate(d.tanggal)+'</td><td style="color:var(--ink3);">'+pnHari(d.tanggal)+'</td>' +
       '<td class="num">'+fmtRp(d.income)+'</td><td class="num">'+fmtRp(d.kulakan)+'</td>' +
       '<td class="num">'+fmtRp(d.totalPengeluaran)+'</td><td class="num">'+fmtRp(d.totalPrive)+'</td>' +
@@ -2700,7 +2703,8 @@ function pnRenderHarian(data){
       '<td class="num '+(d.gross>=0?'pos':'neg')+'">'+fmtRp(d.gross)+'</td>' +
       '<td class="num '+(d.netPos>=0?'pos':'neg')+'">'+fmtRp(d.netPos)+'</td>' +
       '<td class="num '+(d.marginP>=15?'pos':'neg')+'">'+d.marginP.toFixed(1)+'%</td>' +
-      '<td class="num '+(d.marginC>=0?'pos':'neg')+'">'+d.marginC.toFixed(1)+'%</td></tr>';
+      '<td class="num '+(d.marginC>=0?'pos':'neg')+'">'+d.marginC.toFixed(1)+'%</td>' +
+      '<td style="text-align:center;"><button class="ar-del-date" style="float:none;" data-pndel="'+ds+'" title="Hapus data tanggal ini dari riwayat">✕</button></td></tr>';
   });
   const ti=pnSum(data,'income'), tk=pnSum(data,'kulakan'), tp=pnSum(data,'totalPengeluaran'),
         tpr=pnSum(data,'totalPrive'), tc=pnSum(data,'cash'), tr=pnSum(data,'receh'),
@@ -2712,7 +2716,7 @@ function pnRenderHarian(data){
     '<td class="num">'+fmtRp(tc)+'</td><td class="num">'+fmtRp(tr)+'</td>' +
     '<td class="num '+(tg>=0?'pos':'neg')+'">'+fmtRp(tg)+'</td>' +
     '<td class="num '+(tn>=0?'pos':'neg')+'">'+fmtRp(tn)+'</td>' +
-    '<td class="num">'+mp.toFixed(1)+'%</td><td class="num">'+mc.toFixed(1)+'%</td></tr></tbody>';
+    '<td class="num">'+mp.toFixed(1)+'%</td><td class="num">'+mc.toFixed(1)+'%</td><td></td></tr></tbody>';
   $('pn-tbl-harian').innerHTML = h;
 }
 function pnMingguKey(d){
@@ -3371,50 +3375,47 @@ function arsInit(){
   $('ar-pdf-btn').addEventListener('click', arsOpenReport);
 }
 
-// ── MODE & AUTOSAVE ──
-function pnSetMode(m){
-  pnMode = m;
-  $('pn-mode-a').classList.toggle('active', m === 'A');
-  $('pn-mode-b').classList.toggle('active', m === 'B');
-  $('pn-panel-a').style.display = m === 'A' ? '' : 'none';
-  $('pn-panel-b').style.display = m === 'B' ? '' : 'none';
-  localStorage.setItem(PN_LS_MODE, m);
-}
+// ── AUTOSAVE (draft teks input — bukan hasil analisis, itu sudah permanen di pnDays) ──
 const pnSaveDraft = debounce(() => {
   try { localStorage.setItem(PN_LS_RAW, $('pn-raw').value); } catch(e){}
-  localStorage.setItem(PN_LS_START, $('pn-start-date').value || '');
 }, 500);
 
 // ── INIT PNL ──
 function pnInit(){
   const savedRaw = localStorage.getItem(PN_LS_RAW);
   if (savedRaw) $('pn-raw').value = savedRaw;
-  const savedStart = localStorage.getItem(PN_LS_START);
-  $('pn-start-date').value = savedStart || todayInput();
-  pnSetMode(localStorage.getItem(PN_LS_MODE) || 'A');
-  // input mentah sudah lama auto-tersimpan, tapi hasil ANALISISNYA (kartu,
-  // tabel harian/mingguan/bulanan) cuma variabel in-memory — hilang tiap
-  // reload sampai user pencet "Proses Data" lagi. Proses ulang otomatis
-  // (senyap, tanpa scroll) di sini supaya tampilan terakhir langsung ada.
-  if (savedRaw && savedRaw.trim()) pnProcess(true);
+  // Riwayat hasil analisis dibaca langsung dari pnDays (localStorage) — bukan
+  // dengan memproses ulang teks draft — jadi tampilan terakhir selalu utuh
+  // sejak awal, tak bergantung ada/tidaknya draft di kotak input saat ini.
+  pnAll = pnMaterializeAll();
+  if (pnAll.length){
+    pnFiltered = [...pnAll];
+    $('pn-filter-from').value = pnToInput(pnAll[0].tanggal);
+    $('pn-filter-to').value = pnToInput(pnAll[pnAll.length-1].tanggal);
+    pnRenderAll();
+    $('pn-result').style.display = '';
+  }
 
-  $('pn-mode-a').addEventListener('click', () => pnSetMode('A'));
-  $('pn-mode-b').addEventListener('click', () => pnSetMode('B'));
   $('pn-process-btn').addEventListener('click', () => pnProcess());
   $('pn-clear-btn').addEventListener('click', () => {
-    showConfirm('Bersihkan data PNL yang tersimpan?', 'Bersihkan', true, () => {
+    showConfirm('Kosongkan kotak input? (riwayat yang sudah tersimpan tidak ikut terhapus — hapus per tanggal di tabel Harian kalau perlu)', 'Kosongkan', true, () => {
       $('pn-raw').value = '';
       localStorage.removeItem(PN_LS_RAW);
-      $('pn-result').style.display = 'none';
       $('pn-blok-preview').style.display = 'none';
-      pnAll = []; pnFiltered = [];
       pnStatus('', '');
     });
   });
   $('pn-filter-btn').addEventListener('click', pnApplyFilter);
   $('pn-filter-clear').addEventListener('click', pnClearFilter);
   $('pn-raw').addEventListener('input', pnSaveDraft);
-  $('pn-start-date').addEventListener('change', pnSaveDraft);
+  $('pn-tbl-harian').addEventListener('click', e => {
+    const b = e.target.closest('[data-pndel]');
+    if (!b) return;
+    const ds = b.dataset.pndel;
+    showConfirm('Hapus data tanggal '+ds+' dari riwayat Analisis? (arsip Pengeluaran/Prive tanggal ini tidak ikut terhapus)', 'Hapus', true, () => {
+      pnDeleteDay(ds);
+    });
+  });
 
   document.querySelectorAll('#mod-pnl .tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
