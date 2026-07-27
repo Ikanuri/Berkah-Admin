@@ -125,6 +125,11 @@ Arti angka: **Gross** = income − kulakan · **Net Position** = cash − kulaka
 tersimpan permanen — tutup app tidak hilang, dan otomatis tampil lagi begitu
 app dibuka ulang, tanpa perlu pencet Proses lagi.
 
+Warna **Margin Performa** menandakan jarak ke target ≥15%, bukan sekadar
+plus/minus: 🟢 hijau = target tercapai · 🟡 **kuning** = masih untung tapi
+belum sampai 15% · 🔴 merah = benar-benar rugi. Margin Cash tetap 2 warna
+(hijau/merah) karena targetnya memang ≥0%.
+
 ### 🗄 Sub-tab ARSIP — jejak pengeluaran & prive
 Setiap kali Anda tekan Proses Data, semua baris `#pengeluaran` dan `#prive`
 **otomatis tersimpan permanen** ke arsip (hari sama diproses ulang → tidak dobel).

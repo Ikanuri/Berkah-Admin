@@ -322,6 +322,27 @@ Setiap perubahan mesin wajib mempertahankan angka ini.
   margin harian.
 - Blok valid: punya tanggal dan minimal satu dari income/kulakan/cash.
 
+### Warna Margin Performa — 3 tingkat berbasis TARGET, bukan cuma tanda
+`pnMarginCls(mp)` (dan `mpCls` versi lokal di dalam `pnReportScript` untuk
+laporan PDF, self-contained sesuai pola fungsi report lainnya):
+```js
+mp >= 15 ? 'pos' : mp >= 0 ? 'warn' : 'neg'
+```
+Dipakai di **semua** tempat yang menampilkan Margin Performa: kartu ringkasan
+(`pnRenderSummary`), tabel Harian (`pnRenderHarian`), tabel Mingguan/Bulanan
+(`pnRenderAgregat`), dan Laporan PDF (kartu KPI + tabel Detail Harian + Rekap
+Bulanan). Warna: hijau `--green` (capai target ≥15%) · **kuning `--amber`**
+(positif tapi di bawah target) · merah `--red` (benar-benar minus). CSS baru:
+`.sum-val.warn` / `td.warn` (app), `.kpi-v.warn` / `tbody td.warn` + var
+`--amber` (laporan PDF, palet cream/rust — nilai `#93690f`, cukup gelap di
+atas cream `#f7f4ef`).
+
+**Margin Cash SENGAJA tetap 2 warna** (`mc>=0?'pos':'neg'`, tidak diubah).
+Targetnya sudah persis ≥0% — "di bawah target" dan "minus" adalah batas yang
+sama untuk metrik ini, jadi tidak ada celah kuning yang bermakna. Kartu Gross
+& Net Position (nilai Rupiah, bukan %, tanpa target tertulis di kartunya)
+juga sengaja tidak disentuh — tetap pos/neg berbasis tanda seperti semula.
+
 ### Riwayat permanen per hari — upsert, akumulatif (fix N5)
 Sebelumnya `pnProcess()` melakukan `pnAll = days` — **mengganti total**
 riwayat dengan isi kotak input saat itu saja. Kalau user menempel HANYA hari
