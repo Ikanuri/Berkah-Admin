@@ -2403,11 +2403,30 @@ function nkInit(){
   // di-scroll ke layar sebelum diklik) kadang baru terpicu SETELAH dropdown
   // terbuka, bukan sebelumnya — tanpa jeda ini, dropdown yang baru saja
   // dibuka langsung tertutup lagi oleh event scroll miliknya sendiri.
-  document.addEventListener('scroll', () => {
-    if (nkOpenRow >= 0 && Date.now() - nkOpenedAt > 150) nkCloseDropdowns();
+  // PENTING: scroll di DALAM dropdown sendiri (menggulir daftar produk,
+  // #nk-cdfloat-res yang overflow-y:auto) BUKAN alasan untuk menutup — itu
+  // dulu bug (listener ini menutup dropdown walau yang discroll cuma
+  // daftarnya sendiri, bukan halaman di baliknya).
+  document.addEventListener('scroll', e => {
+    if (nkOpenRow < 0) return;
+    if ($('nk-cdfloat').contains(e.target)) return;
+    if (Date.now() - nkOpenedAt <= 150) return;
+    nkCloseDropdowns();
   }, true);
+  // Resize juga terpicu saat keyboard HP muncul/hilang (fokus ke kotak cari
+  // di dalam dropdown). Itu bukan resize sungguhan yang membuat posisi tidak
+  // relevan — dulu ini bug: begitu kotak cari disentuh, keyboard muncul,
+  // resize terpicu, dropdown langsung tertutup SEBELUM sempat mengetik.
+  // Kalau fokus sedang di dalam dropdown, reposisikan saja (bukan tutup).
   window.addEventListener('resize', () => {
-    if (nkOpenRow >= 0) nkCloseDropdowns();
+    if (nkOpenRow < 0) return;
+    const float = $('nk-cdfloat');
+    if (float.contains(document.activeElement)){
+      const trig = document.querySelector('#nk-table .cd-trigger.open');
+      if (trig) nkPositionFloat(trig);
+      return;
+    }
+    nkCloseDropdowns();
   });
 
   $('nk-print-btn').addEventListener('click', nkPrint);

@@ -106,6 +106,39 @@ function check(name, cond, extra){
   await page.waitForTimeout(200);
   const openAfterScroll = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
   check('Scroll saat dropdown terbuka → otomatis tertutup', openBeforeScroll && !openAfterScroll);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+
+  // 4c. regresi: scroll DI DALAM daftar produk dropdown & keyboard HP (resize
+  // saat kotak cari fokus) TIDAK BOLEH menutup dropdown — laporan bug user:
+  // "ketika akan mengetik atau scroll produk di dropdown, dropdown tertutup
+  // sendiri". Akar sebab: listener scroll/resize lama menutup TANPA CEK
+  // sumber event — scroll di dalam #nk-cdfloat-res & resize dari keyboard HP
+  // (saat fokus ke kotak cari) ikut ke-anggap "scroll/resize halaman".
+  await clickLastTrigger();
+  await page.evaluate(() => {
+    const res = document.getElementById('nk-cdfloat-res');
+    res.scrollTop = 20;
+    res.dispatchEvent(new Event('scroll', { bubbles: false }));
+  });
+  await page.waitForTimeout(250);
+  const openAfterInnerScroll = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
+  check('Scroll DI DALAM daftar produk dropdown TIDAK menutup (fix)', openAfterInnerScroll);
+  await page.evaluate(() => {
+    document.querySelector('#nk-cdfloat .cd-search input').focus();
+  });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+  await page.waitForTimeout(250);
+  const openAfterKbResize = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
+  check('Resize (keyboard HP) saat kotak cari fokus TIDAK menutup (fix)', openAfterKbResize);
+  await page.type('#nk-cdfloat .cd-search input', 'lilin', { delay: 20 });
+  await page.waitForTimeout(300);
+  const openAfterTyping = await page.$eval('#nk-cdfloat', el => el.classList.contains('open'));
+  const searchResLen = await page.$eval('#nk-cdfloat-res', el => el.innerHTML.length);
+  check('Mengetik di kotak cari TIDAK menutup dropdown & hasil muncul (fix)', openAfterTyping && searchResLen > 0, 'html len=' + searchResLen);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { const el = document.getElementById('nk-cdfloat'); if (el) el.classList.remove('open'); });
 
   // 5. seekbar muncul saat halaman panjang + jump bekerja
   const seekVisible = await page.$eval('#g-seek', el => !el.classList.contains('hide'));

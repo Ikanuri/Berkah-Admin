@@ -229,10 +229,22 @@ di luar `.tbl-wrap` sepenuhnya sehingga kebal dari klip overflow apapun.
   dibuka langsung tertutup sendiri. Difix dengan `nkOpenedAt` (timestamp saat
   dibuka) + jendela toleransi 150ms: `scroll` yang datang dalam 150ms sejak buka
   diabaikan, scroll sesudahnya tetap menutup seperti mestinya.
-- `resize` juga menutup dropdown (posisi absolut jadi tidak relevan).
+- `resize` juga menutup dropdown (posisi absolut jadi tidak relevan) — KECUALI
+  fokus sedang di dalam `#nk-cdfloat` (lihat poin berikut).
 - Efek samping menguntungkan: karena `#nk-cdfloat` di luar area scroll tabel,
   klik native Playwright di dalamnya stabil (tak perlu workaround klik-programatik
   yang dipakai untuk elemen di dalam `.tbl-wrap`).
+- **Jebakan kedua — scroll/resize DI DALAM dropdown ikut dianggap "keluar"**:
+  listener scroll penutup di atas awalnya tidak cek `e.target`, jadi
+  menggulir daftar produk sendiri (`#nk-cdfloat-res`, `overflow-y:auto`) ikut
+  menutup dropdown seolah itu scroll halaman. Sama halnya `resize`: keyboard
+  HP yang muncul begitu kotak cari disentuh juga memicu `resize` — sebelum
+  fix, ini menutup dropdown **persis saat user baru mau mengetik**. Fix:
+  - `scroll`: abaikan kalau `$('nk-cdfloat').contains(e.target)` — hanya
+    scroll di LUAR dropdown (halaman/tabel) yang menutup.
+  - `resize`: abaikan (dan **reposisi ulang**, bukan cuma diam) kalau
+    `document.activeElement` ada di dalam `#nk-cdfloat` — berarti user sedang
+    fokus ke kotak cari, resize itu efek keyboard HP, bukan alasan menutup.
 
 ### Kamus belajar
 Key: `tokenizeName(namaInput).join(' ') + '|' + satClassOf(satuan)` → nilai: nama
@@ -592,11 +604,13 @@ node tests/match-test.js        # mesin pencocokan: 43/43 (ekstrak dari index.ht
 # smoke butuh playwright + chromium:
 npm i playwright                # (browser sudah ada? set CHROMIUM_PATH)
 CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 78/78
-CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 18/18
+CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 21/21
 ```
 
 Cakupan smoke: upload & persistensi CSV, parse 43 baris, dropdown+search+kamus
-(termasuk portal `#nk-cdfloat` tak terklip di baris bawah tabel mobile),
+(termasuk portal `#nk-cdfloat` tak terklip di baris bawah tabel mobile, DAN
+scroll-di-dalam-daftar/resize-keyboard-saat-fokus TIDAK menutup dropdown —
+regresi bug nyata),
 kalkulator (modal, terpusat, **ukuran stabil setelah ketik — regresi bug nyata**),
 generate nota, PNL mode B + `#cash` multi-angka, laporan PDF Analisis (kontras
 kartu gelap tercetak benar + font PT Serif), arsip auto-isi + donut + legend +
@@ -633,6 +647,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | N3 | Dropdown produk baris bawah terpotong di HP, tak bisa diklik | `.tbl-wrap{overflow-x:auto}` diam-diam membuat `overflow-y` ikut jadi `auto` (aturan CSS: satu sumbu non-`visible` memaksa sumbu lain jadi `auto`), mengklip `.cd-list` yang menjorok di luar tinggi tabel | portal ke `#nk-cdfloat` (`position:fixed` di `<body>`, lihat §5) + sub-fix jendela toleransi 150ms untuk hindari `scroll` residual dari `scrollIntoView()` yang menutup dropdown sendiri sesaat setelah dibuka |
 | P8 | Kartu KPI gelap (Total Income/Kulakan) pudar di laporan PDF | browser tidak mencetak `background-color` secara default kecuali user centang "background graphics" — teks terang-untuk-latar-gelap jadi nyaris putih-di-atas-putih | `print-color-adjust:exact` dkk di `pnReportCSS()` (lihat §7) |
 | P9 | Font laporan PDF "kurang cocok, susah dibaca" | 3 Google Fonts dekoratif+monospace (Cormorant Garamond/DM Mono/Outfit), rawan gagal load sebelum `window.print()` (race condition) | satu font serif biasa "PT Serif" (fallback sistem Georgia) + label/angka pakai font sistem (`Arial`/`Consolas`), lihat §7 |
+| N4 | Dropdown produk tertutup sendiri saat mengetik di kotak cari ATAU scroll daftar produk | listener `scroll`/`resize` penutup dropdown (fix N3) tidak cek SUMBER event: scroll di dalam `#nk-cdfloat-res` (menggulir daftar) ikut dianggap "scroll halaman", dan `resize` dari keyboard HP muncul (saat kotak cari fokus) ikut dianggap "resize sungguhan" | scroll: abaikan kalau `e.target` ada di dalam `#nk-cdfloat`. resize: abaikan (reposisi saja, bukan tutup) kalau fokus sedang di dalam `#nk-cdfloat` — lihat §5 |
 
 ### Checklist debug cepat
 1. Fungsi stok pakai `skActive()` atau `skState` yang salah?
@@ -640,7 +655,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 3. `skSuppress` di-set sebelum menulis output programatik?
 4. Ada `const/let` dipakai sebelum deklarasi (IIFE awal)?
 5. Ada class CSS dipakai dua makna? (pelajaran G3)
-6. Test: 43/43, 78/78, 18/18 masih hijau?
+6. Test: 43/43, 78/78, 21/21 masih hijau?
 
 ---
 
@@ -681,7 +696,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 >    boleh bilang "tidak ketemu" — dan itu fitur, bukan kelemahan.
 >
 > Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **78/78**
-> smoke desktop, **18/18** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
+> smoke desktop, **21/21** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
 > turun, kembalikan dulu sebelum melangkah.
 >
 > — ✳ *Claude Fable 5 · Anthropic · Juli 2026*
