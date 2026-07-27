@@ -113,7 +113,9 @@ Download PDF).
 
 Arti angka: **Gross** = income − kulakan · **Net Position** = cash − kulakan ·
 **Margin** dihitung tertimbang dari total (target ≥15% / ≥0%). Input Anda
-tersimpan otomatis — tutup app tidak hilang.
+tersimpan otomatis — tutup app tidak hilang, dan hasil analisisnya (kartu +
+tabel) **otomatis tampil lagi** begitu app dibuka ulang, tanpa perlu pencet
+Proses Data lagi.
 
 ### 🗄 Sub-tab ARSIP — jejak pengeluaran & prive
 Setiap kali Anda tekan Proses Data, semua baris `#pengeluaran` dan `#prive`

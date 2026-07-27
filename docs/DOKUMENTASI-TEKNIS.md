@@ -124,7 +124,7 @@ Setiap aturan lahir dari bug nyata (lihat §12):
 | `brk-nota-hist` | Nota | riwayat nota (maks 100, terbaru dulu) |
 | `brk-nota-counter` | Nota | counter nomor nota (naik saat "Simpan ke Riwayat") |
 | `brk-nota-draft` | Nota | `{input, ket, num}` — draft auto-save |
-| `brk-pnl-raw` | PNL | teks mentah (auto-save, debounce 500ms) |
+| `brk-pnl-raw` | PNL | teks mentah (auto-save, debounce 500ms) — di-reproses OTOMATIS saat `pnInit()` kalau ada isi, supaya tampilan Analisis (kartu+tabel) tidak hilang setelah reload |
 | `brk-pnl-mode` | PNL | `'A' \| 'B'` |
 | `brk-pnl-start` | PNL | tanggal mulai Mode A |
 | `brk-pnl-arsip` | PNL | `{ 'YYYY-MM-DD': [{j:'p'\|'v', amt:Number, ket:String}] }` |
@@ -321,6 +321,21 @@ Setiap perubahan mesin wajib mempertahankan angka ini.
   margin **tertimbang dari total** di SEMUA tampilan (fix P5) — bukan rata-rata
   margin harian.
 - Blok valid: punya tanggal dan minimal satu dari income/kulakan/cash.
+
+### Persistensi hasil Analisis (fix — dulu hilang tiap reload)
+`pnAll`/`pnFiltered` (hasil olahan: kartu ringkasan, tabel harian/mingguan/
+bulanan/rincian) HANYA variabel in-memory, tidak pernah ditulis ke
+localStorage — hanya `brk-pnl-raw` (teks mentah) yang persisten. Sebelum fix
+ini, itu berarti tiap reload/tutup-app, tampilan Analisis kembali kosong
+(`#pn-result` balik ke `display:none` default template) sampai user pencet
+**▶ Proses Data** lagi — padahal input mentahnya sendiri sudah aman
+tersimpan. Fix: `pnInit()` memanggil `pnProcess(true)` (mode senyap — tanpa
+`scrollIntoView`, lihat parameter `silent` di `pnProcess(silent)`) kalau ada
+`brk-pnl-raw` tersimpan, sehingga tampilan Analisis otomatis di-render ulang
+dari raw yang sama — idempoten, hasilnya identik dengan reproses manual.
+**Penting**: listener tombol jadi `() => pnProcess()` (bukan `pnProcess`
+langsung) — kalau tidak, `click` event object ikut jadi argumen `silent`
+(objek = truthy) dan klik manual pun kehilangan scroll-nya.
 
 ### Arsip pengeluaran & prive
 - **Auto-akumulasi**: tiap `pnProcess` sukses, entri per hari ditulis ke
@@ -648,6 +663,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | P8 | Kartu KPI gelap (Total Income/Kulakan) pudar di laporan PDF | browser tidak mencetak `background-color` secara default kecuali user centang "background graphics" — teks terang-untuk-latar-gelap jadi nyaris putih-di-atas-putih | `print-color-adjust:exact` dkk di `pnReportCSS()` (lihat §7) |
 | P9 | Font laporan PDF "kurang cocok, susah dibaca" | 3 Google Fonts dekoratif+monospace (Cormorant Garamond/DM Mono/Outfit), rawan gagal load sebelum `window.print()` (race condition) | satu font serif biasa "PT Serif" (fallback sistem Georgia) + label/angka pakai font sistem (`Arial`/`Consolas`), lihat §7 |
 | N4 | Dropdown produk tertutup sendiri saat mengetik di kotak cari ATAU scroll daftar produk | listener `scroll`/`resize` penutup dropdown (fix N3) tidak cek SUMBER event: scroll di dalam `#nk-cdfloat-res` (menggulir daftar) ikut dianggap "scroll halaman", dan `resize` dari keyboard HP muncul (saat kotak cari fokus) ikut dianggap "resize sungguhan" | scroll: abaikan kalau `e.target` ada di dalam `#nk-cdfloat`. resize: abaikan (reposisi saja, bukan tutup) kalau fokus sedang di dalam `#nk-cdfloat` — lihat §5 |
+| P10 | Hasil Analisis PNL hilang tiap reload — user kira "tidak bisa disimpan, cuma read-only saat itu" | `pnAll`/`pnFiltered` cuma variabel in-memory; hanya `brk-pnl-raw` (teks mentah) yang persisten, tampilan tabel/kartu tidak ikut | `pnInit()` panggil `pnProcess(true)` (senyap) kalau ada raw tersimpan — reproses otomatis, lihat §7 |
 
 ### Checklist debug cepat
 1. Fungsi stok pakai `skActive()` atau `skState` yang salah?

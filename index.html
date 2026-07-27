@@ -2573,7 +2573,7 @@ function pnStatus(msg, type){
   el.textContent = msg;
   el.style.color = type === 'err' ? 'var(--red)' : type === 'ok' ? 'var(--green)' : 'var(--ink3)';
 }
-function pnProcess(){
+function pnProcess(silent){
   const raw = $('pn-raw').value;
   if (!raw.trim()){ pnStatus('Paste raw data dulu.', 'err'); return; }
   const bloks = pnSplitBloks(raw);
@@ -2640,7 +2640,7 @@ function pnProcess(){
   $('pn-filter-info').textContent = '';
   pnRenderAll();
   $('pn-result').style.display = '';
-  $('pn-result').scrollIntoView({behavior:'smooth', block:'start'});
+  if (!silent) $('pn-result').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 // ── FILTER (selalu lokal) ──
@@ -3392,10 +3392,15 @@ function pnInit(){
   const savedStart = localStorage.getItem(PN_LS_START);
   $('pn-start-date').value = savedStart || todayInput();
   pnSetMode(localStorage.getItem(PN_LS_MODE) || 'A');
+  // input mentah sudah lama auto-tersimpan, tapi hasil ANALISISNYA (kartu,
+  // tabel harian/mingguan/bulanan) cuma variabel in-memory — hilang tiap
+  // reload sampai user pencet "Proses Data" lagi. Proses ulang otomatis
+  // (senyap, tanpa scroll) di sini supaya tampilan terakhir langsung ada.
+  if (savedRaw && savedRaw.trim()) pnProcess(true);
 
   $('pn-mode-a').addEventListener('click', () => pnSetMode('A'));
   $('pn-mode-b').addEventListener('click', () => pnSetMode('B'));
-  $('pn-process-btn').addEventListener('click', pnProcess);
+  $('pn-process-btn').addEventListener('click', () => pnProcess());
   $('pn-clear-btn').addEventListener('click', () => {
     showConfirm('Bersihkan data PNL yang tersimpan?', 'Bersihkan', true, () => {
       $('pn-raw').value = '';
