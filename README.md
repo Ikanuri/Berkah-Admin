@@ -6,7 +6,7 @@ Satu file HTML berisi tiga tools operasional Toko Berkah:
 |---|---|
 | **Nota Kulakan** | Daftar belanja teks bebas → dicocokkan ke database produk (CSV) → nota thermal, print, share WA (teks/gambar), riwayat |
 | **PNL Analyzer** | Template harian ber-hashtag → tabel harian/mingguan/bulanan/rincian, filter tanggal, export CSV, laporan PDF |
-| **Stok Kosong** | Checklist stok kosong dua mode (Bos ↔ Karyawan), PIN + session timeout, sync antar device via WebRTC |
+| **Stok Kosong** | Checklist stok kosong dua mode (Bos ↔ Karyawan), PIN + session timeout, sync antar device via WebRTC. Sub-tab **HPP** (kalkulator harga pokok + margin, export `.xlsx`) & **Supplier** (banding harga antar supplier, khusus Mode Bos) |
 
 ## Cara pakai
 

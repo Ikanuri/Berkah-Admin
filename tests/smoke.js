@@ -354,6 +354,95 @@ function check(name, cond, extra){
   const catBtnsWorker = await page.$$('#sk-counter [data-catall]');
   check('Mini-tombol per-kategori TIDAK tampil di Mode Karyawan', catBtnsWorker.length === 0, catBtnsWorker.length + ' tombol');
 
+  // ── HPP & SUPPLIER (fitur baru — reuse kategori/nama dari Checklist, boss-only) ──
+  // re-entry Mode Bos (PIN "1234" sudah dibuat di seksi Stok sebelumnya)
+  for (let i = 0; i < 5; i++){ await page.click('#sk-logo-tap'); await page.waitForTimeout(80); }
+  await page.waitForTimeout(300);
+  for (const d of ['1','2','3','4']) await page.click('#sk-pin-grid [data-k="'+d+'"]');
+  await page.waitForTimeout(500);
+  const subnavVisibleBoss = await page.$eval('#sk-subnav', el => getComputedStyle(el).display !== 'none');
+  check('Subnav HPP/Supplier tampil setelah re-entry Mode Bos', subnavVisibleBoss);
+
+  await page.click('#sk-subnav [data-skview="hpp"]');
+  await page.waitForTimeout(300);
+  const hppRowCount = await page.$$eval('#hpp-table tbody tr', els => els.length);
+  check('Tabel HPP reuse item dari Checklist (Umum: Gula Pasir dkk)', hppRowCount === 3, hppRowCount + ' baris');
+
+  async function setHppCell(rowSel, field, val){
+    await page.$eval('#hpp-table tbody tr:'+rowSel+' [data-f="'+field+'"]', (el,v) => {
+      el.value = v; el.dispatchEvent(new Event('change', {bubbles:true}));
+    }, val);
+    await page.waitForTimeout(120);
+  }
+  await setHppCell('first-child', 'isi', '16');
+  await setHppCell('first-child', 'hargaBeli', '68000');
+  const pokokTxt = await page.$eval('#hpp-table tbody tr:first-child td:nth-child(5)', el => el.textContent.trim());
+  check('HPP: Harga Pokok/Ecer terhitung otomatis (68000÷16=4250)', pokokTxt === '4.250', pokokTxt);
+  await setHppCell('first-child', 'hargaJual', '4500');
+  const marginVal = await page.$eval('#hpp-table tbody tr:first-child [data-f="margin"]', el => el.value);
+  check('HPP: Margin terhitung dari Harga Jual (dua arah)', marginVal === '250', marginVal);
+  const marginColor = await page.$eval('#hpp-table tbody tr:first-child [data-f="margin"]', el => getComputedStyle(el).color);
+  check('HPP: Margin positif diwarnai (fix N7 — dulu netral walau minus/plus)', marginColor === 'rgb(94, 122, 82)', marginColor);
+  await setHppCell('first-child', 'margin', '500');
+  const jualAfterMargin = await page.$eval('#hpp-table tbody tr:first-child [data-f="hargaJual"]', el => el.value);
+  check('HPP: ubah Margin → Harga Jual ikut (4250+500=4750)', jualAfterMargin === '4750', jualAfterMargin);
+
+  await page.fill('#hpp-bulk-val', '300');
+  await page.click('#hpp-bulk-cat-btn');
+  await page.waitForTimeout(200);
+  await page.click('#g-confirm-ok');
+  await page.waitForTimeout(300);
+  const jualBulk = await page.$eval('#hpp-table tbody tr:first-child [data-f="hargaJual"]', el => el.value);
+  check('HPP: bulk margin per-kategori menimpa Harga Jual (4250+300=4550)', jualBulk === '4550', jualBulk);
+
+  const [hppDl] = await Promise.all([
+    page.waitForEvent('download'),
+    page.click('#hpp-export-btn'),
+  ]);
+  check('HPP: Export Excel memicu unduhan', !!(await hppDl.path()), hppDl.suggestedFilename());
+
+  // ── SUPPLIER ──
+  await page.click('#sk-subnav [data-skview="supplier"]');
+  await page.waitForTimeout(300);
+  await page.click('#sup-add-btn');
+  await page.waitForTimeout(200);
+  await page.fill('#sup-add-input', 'Toko Grosir A');
+  await page.click('#sup-add-ok');
+  await page.waitForTimeout(200);
+  const supRowCount = await page.$$eval('#sup-input-table tbody tr', els => els.length);
+  check('Supplier: tabel input menampilkan barang', supRowCount === 3, supRowCount + ' baris');
+  await page.$eval('#sup-input-table tbody tr:first-child .sup-price-inp', el => { el.value = '65000'; el.dispatchEvent(new Event('input', {bubbles:true})); });
+  await page.click('#sup-save-btn');
+  await page.waitForTimeout(200);
+  await page.click('#g-confirm-ok');
+  await page.waitForTimeout(300);
+  await page.click('#sk-subnav [data-skview="hpp"]');
+  await page.waitForTimeout(300);
+  const hargaBeliAfterSupplier = await page.$eval('#hpp-table tbody tr:first-child [data-f="hargaBeli"]', el => el.value);
+  check('Supplier: harga TERAKHIR diinput menimpa Harga Beli item (acuan HPP)', hargaBeliAfterSupplier === '65000', hargaBeliAfterSupplier);
+
+  await page.click('#sk-subnav [data-skview="supplier"]');
+  await page.waitForTimeout(200);
+  await page.click('#sup-subnav [data-supview="analisis"]');
+  await page.waitForTimeout(300);
+  const donutSlices = await page.$$('#sup-donut [data-sup]');
+  check('Supplier: donut ringkasan ter-render', donutSlices.length >= 1, donutSlices.length + ' slice');
+
+  // ── BACKUP GABUNGAN ikut bawa data HPP/Supplier ──
+  const [backupDlHpp] = await Promise.all([
+    page.waitForEvent('download'),
+    page.evaluate(() => document.getElementById('g-backup-btn').click()),
+  ]);
+  const backupJsonHpp = JSON.parse(fs.readFileSync(await backupDlHpp.path(), 'utf8'));
+  const itemsFlat = Object.values(backupJsonHpp.stok.boss.items).flat();
+  const anyItemWithHpp = itemsFlat.find(i => i.isi);
+  check('Backup Gabungan: field HPP ikut (isi/hargaBeli/hargaJual di item)', !!anyItemWithHpp, JSON.stringify(anyItemWithHpp));
+  check('Backup Gabungan: daftar supplier ikut', Array.isArray(backupJsonHpp.stok.suppliers) && backupJsonHpp.stok.suppliers.length >= 1, JSON.stringify(backupJsonHpp.stok.suppliers));
+  check('Backup Gabungan: riwayat harga (pricelog) ikut', Array.isArray(backupJsonHpp.stok.pricelog) && backupJsonHpp.stok.pricelog.length >= 1, backupJsonHpp.stok.pricelog.length);
+
+  await page.click('#sk-exit-btn');
+  await page.waitForTimeout(300);
+
   // ── DROPDOWN SEARCH PRODUK (fitur baru) ──
   await page.click('[data-mod="nota"]');
   await page.waitForTimeout(300);

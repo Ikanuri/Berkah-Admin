@@ -200,6 +200,12 @@ tbody td input.cell-inp{
   outline:none;text-align:right;
 }
 tbody td input.cell-inp:focus{border-color:var(--accent);}
+/* pos/neg/warn di INPUT (bukan td) — dipakai kolom Margin HPP. `.cell-inp`
+   di atas set color eksplisit, jadi td.pos/.neg/.warn generik (target td)
+   tak pernah kena; butuh selector sespesifik ini untuk menang. */
+tbody td input.cell-inp.pos{color:var(--green);}
+tbody td input.cell-inp.neg{color:var(--red);}
+tbody td input.cell-inp.warn{color:var(--amber);}
 
 /* status strip & chip */
 td.strip{width:4px;padding:0;border-radius:3px 0 0 3px;}
@@ -263,6 +269,12 @@ td.strip{width:4px;padding:0;border-radius:3px 0 0 3px;}
   height:100vh;height:100dvh; /* pusat mengikuti viewport NYATA di HP (URL bar dinamis) */
 }
 .overlay.open{display:flex;}
+/* showConfirm() bisa dipanggil SAAT modal lain masih terbuka (mis. hapus
+   kategori/supplier dari dalam modal editnya) — semua .overlay berbagi
+   z-index yang sama, jadi tanpa ini overlay konfirmasi bisa tertimbun
+   modal yang lebih belakangan posisinya di DOM. Bug laten lama, baru
+   ketahuan saat fitur Supplier (hapus dari modal edit) diuji. */
+#g-confirm-overlay{z-index:1100;}
 .modal{
   background:var(--surface);border:1px solid var(--border);border-radius:18px;
   width:100%;max-width:400px;max-height:88vh;overflow-y:auto;
@@ -383,6 +395,16 @@ html[data-theme="dark"] .sum-card.dark{background:#1B1A19;}
   background:var(--surface2);font-family:var(--mono);font-size:10.5px;font-weight:600;
   color:var(--ink2);letter-spacing:.4px;padding:7px 10px;
 }
+
+/* ── HPP / Supplier — ranking harga horizontal (Analisis Supplier) ── */
+.hbar-row{display:flex;align-items:center;gap:10px;padding:5px 0;}
+.hbar-lbl{width:120px;flex-shrink:0;font-size:12px;color:var(--ink3);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.hbar-track{flex:1;height:20px;background:var(--bg2);border-radius:5px;overflow:hidden;}
+.hbar-fill{height:100%;background:var(--ink4);border-radius:5px;transition:width .25s;}
+.hbar-val{width:96px;flex-shrink:0;font-family:var(--mono);font-size:12px;color:var(--ink2);}
+.hbar-row.cheapest .hbar-fill{background:var(--green);}
+.hbar-row.cheapest .hbar-lbl,.hbar-row.cheapest .hbar-val{color:var(--green);font-weight:700;}
+.hbar-meta{font-size:10.5px;color:var(--ink4);width:100%;margin-top:2px;}
 .ar-jchip{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:600;padding:1.5px 8px;border-radius:100px;letter-spacing:.5px;}
 .ar-jchip.p{background:var(--accent-dim);color:var(--accent);}
 .ar-jchip.v{background:var(--surface2);color:var(--blue);border:1px solid var(--border);}
@@ -900,6 +922,14 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
   </div>
   <div id="sk-lastact" class="sk-lastact" style="display:none;"></div>
 
+  <!-- subnav Checklist/HPP/Supplier — HANYA tampil di Mode Bos (JS: skRenderHeader) -->
+  <div class="pn-subnav" id="sk-subnav" style="display:none;">
+    <button class="sub-btn active" data-skview="checklist">☑ Checklist</button>
+    <button class="sub-btn" data-skview="hpp">💰 HPP</button>
+    <button class="sub-btn" data-skview="supplier">🚚 Supplier</button>
+  </div>
+
+  <div id="sk-view-checklist">
   <!-- input -->
   <div class="panel">
     <div class="panel-head"><div class="panel-title" id="sk-input-label" style="font-size:14px;">Input Barang</div></div>
@@ -983,6 +1013,115 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
     <button class="btn" id="sk-check-all" style="display:none;">☑ Centang Semua</button>
     <button class="btn danger" id="sk-reset-checks" style="display:none;">↺ Reset Semua Centang</button>
     <button class="btn danger" id="sk-clear-items">🗑 Hapus Semua Item</button>
+  </div>
+  </div><!-- /sk-view-checklist -->
+
+  <!-- ── VIEW: HPP (Mode Bos) — reuse kategori & nama dari Checklist, TANPA
+       centang/drag/qty-perlu-order (tidak relevan buat hitung harga pokok) ── -->
+  <div id="sk-view-hpp" style="display:none;">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title" style="font-size:14px;">Terapkan Margin Massal</div></div>
+      <div class="panel-body" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="field" style="max-width:140px;"><span class="field-label">Nilai</span>
+          <input type="text" class="inp" id="hpp-bulk-val" inputmode="decimal" placeholder="mis. 250"></div>
+        <div class="seg" id="hpp-bulk-mode">
+          <button class="seg-opt active" data-val="rp">Rp</button>
+          <button class="seg-opt" data-val="pct">%</button>
+        </div>
+        <button class="btn sm" id="hpp-bulk-cat-btn">Terapkan ke kategori ini</button>
+        <button class="btn sm primary" id="hpp-bulk-all-btn">Terapkan ke SEMUA kategori</button>
+      </div>
+      <div class="hint" style="padding:0 14px 12px;">Menimpa Harga Jual semua barang yang sudah punya Isi &amp; Harga Beli di jangkauan yang dipilih. Barang yang belum lengkap datanya dilewati.</div>
+    </div>
+
+    <div class="cat-bar" id="hpp-cat-bar"></div>
+
+    <div style="position:relative;margin-bottom:12px;">
+      <input type="text" class="inp" id="hpp-search" style="width:100%;padding-left:34px;" placeholder="Cari barang…">
+      <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink4);">⌕</span>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title" style="font-size:14px;">Daftar HPP</div>
+        <button class="btn sm primary" id="hpp-export-btn" style="margin-left:auto;">⬇ Excel</button>
+      </div>
+      <div class="panel-body"><div class="tbl-wrap"><table id="hpp-table"></table></div></div>
+    </div>
+  </div>
+
+  <!-- ── VIEW: SUPPLIER (Mode Bos) — input sesi harga per supplier + analisis banding harga ── -->
+  <div id="sk-view-supplier" style="display:none;">
+    <div class="pn-subnav" id="sup-subnav">
+      <button class="sub-btn active" data-supview="input">📥 Input Harga</button>
+      <button class="sub-btn" data-supview="analisis">📊 Analisis</button>
+    </div>
+
+    <div id="sup-view-input">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="font-size:14px;">Sesi Input Harga</div></div>
+        <div class="panel-body" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+          <div class="field" style="min-width:160px;"><span class="field-label">Supplier</span>
+            <select class="inp" id="sup-picker"></select></div>
+          <button class="mini-btn" id="sup-add-btn">+ Supplier</button>
+          <div class="field" style="max-width:170px;"><span class="field-label">Tanggal</span>
+            <input type="date" class="inp" id="sup-date"></div>
+        </div>
+      </div>
+
+      <div class="cat-bar" id="sup-cat-bar"></div>
+      <div style="position:relative;margin-bottom:12px;">
+        <input type="text" class="inp" id="sup-search" style="width:100%;padding-left:34px;" placeholder="Cari barang…">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink4);">⌕</span>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="font-size:14px;">Input Harga Beli — <span id="sup-session-lbl">pilih supplier</span></div></div>
+        <div class="panel-body"><div class="tbl-wrap"><table id="sup-input-table"></table></div></div>
+      </div>
+      <div style="display:flex;justify-content:center;margin:14px 0 4px;">
+        <button class="btn primary wide" id="sup-save-btn">💾 Simpan Sesi</button>
+      </div>
+    </div>
+
+    <div id="sup-view-analisis" style="display:none;">
+      <div class="panel">
+        <div class="panel-body" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+          <div class="field" style="max-width:170px;"><span class="field-label">Dari</span><input type="date" class="inp" id="sup-an-from"></div>
+          <div class="field" style="max-width:170px;"><span class="field-label">Sampai</span><input type="date" class="inp" id="sup-an-to"></div>
+          <button class="btn sm" id="sup-an-filter-btn">Terapkan</button>
+          <button class="btn sm ghost" id="sup-an-reset-btn">Reset</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="font-size:14px;">Ringkasan per Supplier</div></div>
+        <div class="panel-body">
+          <div class="ar-donut-flex">
+            <div class="ar-donut-wrap">
+              <svg id="sup-donut" viewBox="0 0 220 220" role="img" aria-label="Donut jumlah entri harga per supplier"></svg>
+              <div class="ar-center">
+                <div class="ar-center-val" id="sup-donut-val">—</div>
+                <div class="ar-center-lbl" id="sup-donut-lbl">entri</div>
+              </div>
+            </div>
+            <div class="ar-legend" id="sup-legend"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="font-size:14px;">Bandingkan Harga per Barang — termurah tiap supplier</div></div>
+        <div class="panel-body">
+          <div style="position:relative;margin-bottom:12px;">
+            <input type="text" class="inp" id="sup-item-search" style="width:100%;padding-left:34px;" placeholder="Cari nama barang untuk dibandingkan…" autocomplete="off">
+            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink4);">⌕</span>
+            <div id="sup-item-picks" class="cd-list" style="display:none;"></div>
+          </div>
+          <div id="sup-item-chart"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1220,6 +1359,22 @@ html[data-theme="dark"] #toast{background:#EDEBE4;color:#262624;}
       <button class="btn sm danger" id="sk-cat-del" style="margin-right:auto;display:none;">Hapus</button>
       <button class="btn sm" data-close="sk-cat-overlay">Batal</button>
       <button class="btn sm primary" id="sk-cat-ok">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL: TAMBAH/EDIT SUPPLIER ═══════════════ -->
+<div class="overlay" id="sup-add-overlay">
+  <div class="modal" style="max-width:320px;">
+    <div class="modal-head"><div class="modal-title" id="sup-add-title">Supplier Baru</div><button class="modal-x" data-close="sup-add-overlay">✕</button></div>
+    <div class="modal-body">
+      <input class="inp" id="sup-add-input" style="width:100%;" placeholder="Nama supplier">
+      <div class="pin-err" id="sup-add-err" style="text-align:left;margin-top:6px;"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn sm danger" id="sup-add-del" style="margin-right:auto;display:none;">Hapus</button>
+      <button class="btn sm" data-close="sup-add-overlay">Batal</button>
+      <button class="btn sm primary" id="sup-add-ok">Simpan</button>
     </div>
   </div>
 </div>
@@ -3460,6 +3615,11 @@ const SK_LS_EXP    = 'stok-boss-exp';
 const SK_LS_TIMEOUT= 'stok-timeout';
 const SK_LS_OOR    = 'stok-oor';
 const SK_LS_TS     = 'stok-output-ts';
+// HPP / Supplier (Mode Bos) — isi/hargaBeli/hargaJual NEMPEL langsung di item
+// skState yang sama (lihat §7 dok teknis); dua key ini KHUSUS untuk daftar
+// supplier & riwayat harga (time-series, tidak muat sebagai field tunggal).
+const SK_LS_SUPPLIERS = 'stok-hpp-suppliers';
+const SK_LS_PRICELOG  = 'stok-hpp-pricelog';
 const SK_APP_VER   = '7';
 
 // S5: upgrade versi → hapus PIN DAN sesi bos aktif (dulu hanya PIN)
@@ -3479,6 +3639,8 @@ function skLoadWorker(){
 }
 let skState = skLoadBoss();
 let skWorker = skLoadWorker();
+let hppSuppliers = lsGet(SK_LS_SUPPLIERS, []);
+let hppLog = lsGet(SK_LS_PRICELOG, []);
 // filter kategori output — kategori di daftar ini TIDAK ikut "Order ke Karyawan"
 if (!Array.isArray(skState.outCatEx)) skState.outCatEx = [];
 function skCatExcluded(cat){ return skIsBoss() && skState.outCatEx.includes(cat); }
@@ -3693,6 +3855,9 @@ function skRenderHeader(){
   $('sk-output-label').textContent = skIsBoss() ? 'Order ke Karyawan' : 'Balasan ke Bos';
   $('sk-input-label').textContent = skIsBoss() ? ('Tambah Barang — ' + skState.activecat) : 'Input Barang';
   $('g-stok-settings').style.display = skIsBoss() ? '' : 'none';
+  // HPP & Supplier: harga modal — khusus Mode Bos, Karyawan tidak pernah lihat subnav-nya
+  $('sk-subnav').style.display = skIsBoss() ? 'flex' : 'none';
+  if (!skIsBoss() && skView !== 'checklist') skSetView('checklist');
   skRenderOutCats();
   skUpdateTimeoutBadge();
   skUpdateCounter();
@@ -4397,10 +4562,633 @@ function skDeleteCat(){
   showToast('"'+skCatTarget+'" dihapus');
 }
 
+// ═══════════════════════════════════════════════════════
+// SUBNAV STOK: Checklist ↔ HPP ↔ Supplier (Mode Bos)
+// ═══════════════════════════════════════════════════════
+let skView = 'checklist';
+function skSetView(v){
+  if (!skIsBoss() && v !== 'checklist') v = 'checklist';   // HPP & Supplier: harga modal, khusus Bos
+  skView = v;
+  document.querySelectorAll('#sk-subnav .sub-btn').forEach(b => b.classList.toggle('active', b.dataset.skview === v));
+  $('sk-view-checklist').style.display = v === 'checklist' ? '' : 'none';
+  $('sk-view-hpp').style.display = v === 'hpp' ? '' : 'none';
+  $('sk-view-supplier').style.display = v === 'supplier' ? '' : 'none';
+  if (v === 'hpp') hppRenderAll();
+  if (v === 'supplier') supRenderAll();
+  if (typeof gSeekUpdate === 'function') setTimeout(gSeekUpdate, 60);
+}
+
+// ═══════════════════════════════════════════════════════
+// HPP — Kalkulator Harga Pokok (Mode Bos)
+// isi/hargaBeli/hargaJual NEMPEL LANGSUNG di objek item Stok yang sama
+// (skState.items[kategori][i]) — satu sumber data: tambah/ubah/hapus/rename
+// item atau kategori di tab Checklist otomatis kelihatan di sini, tanpa kode
+// sinkronisasi terpisah. Ikut ke backup Stok "gratis" (spread objek penuh).
+// Sengaja TIDAK reuse skMakeCard (kartu drag+centang) — kolom angka lebih
+// pas sebagai tabel, mirip gaya tabel Harian di PNL.
+// ═══════════════════════════════════════════════════════
+function hppParseAngka(str){
+  if (!str) return 0;
+  return parseInt(String(str).replace(/[.,\s]/g,'')) || 0;
+}
+function hppCost(item){ return (item.isi && item.hargaBeli) ? item.hargaBeli / item.isi : 0; }   // harga pokok per satuan eceran
+function hppFindItem(id){
+  for (const c of skState.cats){
+    const it = (skState.items[c]||[]).find(i => i.id === id);
+    if (it) return it;
+  }
+  return null;
+}
+
+let hppActiveCat = null, hppSearch = '';
+function hppRenderAll(){
+  if (!hppActiveCat || !skState.cats.includes(hppActiveCat)) hppActiveCat = skState.cats[0] || null;
+  hppRenderCats();
+  hppRenderTable();
+}
+function hppRenderCats(){
+  $('hpp-cat-bar').innerHTML = skState.cats.map(c =>
+    '<button class="cat-tab'+(c===hppActiveCat?' active':'')+'" data-hppcat="'+esc(c)+'">'+esc(c)+'</button>').join('');
+}
+function hppRows(){
+  const items = skState.items[hppActiveCat] || [];
+  if (!hppSearch) return items;
+  return items.filter(i => i.name.toLowerCase().includes(hppSearch));
+}
+function hppRenderTable(){
+  const tbl = $('hpp-table');
+  const items = hppActiveCat ? hppRows() : [];
+  if (!items.length){
+    tbl.innerHTML = '<tbody><tr><td style="text-align:center;color:var(--ink4);padding:26px;">'+
+      (hppSearch ? 'Tidak ketemu "'+esc(hppSearch)+'"' : (skState.cats.length ? 'Belum ada barang di kategori ini — tambah lewat tab Checklist' : 'Belum ada kategori')) +
+      '</td></tr></tbody>';
+    return;
+  }
+  let h = '<thead><tr><th>Nama</th><th>Satuan</th><th class="num">Isi</th><th class="num">Harga Beli</th>' +
+    '<th class="num">Pokok/Ecer</th><th class="num">Harga Jual</th><th class="num">Margin</th></tr></thead><tbody>';
+  items.forEach(it => {
+    const pokok = hppCost(it);
+    const hasJual = it.hargaJual > 0;
+    const margin = hasJual ? it.hargaJual - pokok : 0;
+    const cls = (!pokok || !hasJual) ? '' : (margin > 0 ? 'pos' : 'neg');
+    h += '<tr data-id="'+it.id+'">' +
+      '<td>'+esc(it.name)+'</td>' +
+      '<td style="color:var(--ink3);">'+esc(it.unit)+'</td>' +
+      '<td class="num"><input type="text" inputmode="decimal" class="cell-inp" data-f="isi" value="'+(it.isi||'')+'" placeholder="—"></td>' +
+      '<td class="num"><input type="text" inputmode="decimal" class="cell-inp" data-f="hargaBeli" value="'+(it.hargaBeli||'')+'" placeholder="—"></td>' +
+      '<td class="num" style="color:var(--ink3);">'+(pokok ? fmtRp(pokok) : '—')+'</td>' +
+      '<td class="num"><input type="text" inputmode="decimal" class="cell-inp" data-f="hargaJual" value="'+(it.hargaJual||'')+'" placeholder="—"></td>' +
+      '<td class="num"><input type="text" inputmode="decimal" class="cell-inp '+cls+'" data-f="margin" value="'+(hasJual&&pokok?Math.round(margin):'')+'" placeholder="—"></td>' +
+      '</tr>';
+  });
+  h += '</tbody>';
+  tbl.innerHTML = h;
+}
+// dua arah: ubah Harga Jual → Margin ikut (render ulang); ubah Margin → Harga Jual dihitung (Pokok+Margin)
+function hppTableChange(e){
+  const inp = e.target.closest('.cell-inp');
+  if (!inp) return;
+  const tr = inp.closest('tr');
+  const item = hppFindItem(tr.dataset.id);
+  if (!item) return;
+  const f = inp.dataset.f;
+  if (f === 'isi'){
+    const v = parseInt(String(inp.value).replace(/[^\d]/g,''));
+    item.isi = v > 0 ? v : undefined;
+  } else if (f === 'hargaBeli'){
+    item.hargaBeli = hppParseAngka(inp.value) || undefined;
+  } else if (f === 'hargaJual'){
+    item.hargaJual = hppParseAngka(inp.value) || undefined;
+  } else if (f === 'margin'){
+    const pokok = hppCost(item);
+    if (!pokok){ showToast('Isi Isi & Harga Beli dulu sebelum atur Margin'); hppRenderTable(); return; }
+    item.hargaJual = Math.round(pokok + hppParseAngka(inp.value));
+  }
+  lsSet(SK_LS_KEY, skState);
+  hppRenderTable();
+}
+function hppApplyBulkMargin(scope){
+  const mode = document.querySelector('#hpp-bulk-mode .seg-opt.active').dataset.val;
+  const val = hppParseAngka($('hpp-bulk-val').value);
+  const cats = scope === 'all' ? skState.cats : [hppActiveCat];
+  let n = 0, skipped = 0;
+  cats.forEach(c => {
+    (skState.items[c]||[]).forEach(it => {
+      const pokok = hppCost(it);
+      if (!pokok){ skipped++; return; }
+      const margin = mode === 'pct' ? pokok * (val/100) : val;
+      it.hargaJual = Math.round(pokok + margin);
+      n++;
+    });
+  });
+  if (!n){ showToast('Tidak ada barang dengan Isi & Harga Beli terisi di jangkauan ini'); return; }
+  const label = mode === 'pct' ? val+'%' : 'Rp'+val.toLocaleString('id-ID');
+  skTrackAct('margin massal '+label+' → '+n+' barang ('+(scope==='all'?'semua kategori':hppActiveCat)+')');
+  lsSet(SK_LS_KEY, skState);
+  hppRenderTable();
+  showToast('✓ '+n+' Harga Jual diperbarui'+(skipped?' · '+skipped+' dilewati (Isi/Harga Beli kosong)':''));
+}
+function hppExportExcel(){
+  const rows = [];
+  skState.cats.forEach(c => {
+    (skState.items[c]||[]).forEach(it => {
+      const pokok = hppCost(it);
+      const margin = it.hargaJual ? it.hargaJual - pokok : 0;
+      rows.push([c, it.name, it.unit, it.isi||'', it.hargaBeli||'', pokok?Math.round(pokok):'', it.hargaJual||'', it.hargaJual?Math.round(margin):'']);
+    });
+  });
+  if (!rows.length){ showToast('Belum ada data HPP'); return; }
+  const headers = ['Kategori','Nama Barang','Satuan','Isi','Harga Beli','Harga Pokok per Eceran','Harga Jual','Margin'];
+  const d = new Date();
+  const fn = 'HPP-Berkah-'+String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getFullYear()).slice(2)+'.xlsx';
+  downloadXlsx(fn, 'HPP', headers, rows);
+  showToast('Excel HPP diunduh ('+rows.length+' barang)');
+}
+function hppInit(){
+  $('hpp-search').addEventListener('input', function(){ hppSearch = this.value.trim().toLowerCase(); hppRenderTable(); });
+  $('hpp-cat-bar').addEventListener('click', e => {
+    const b = e.target.closest('[data-hppcat]');
+    if (!b) return;
+    hppActiveCat = b.dataset.hppcat;
+    hppRenderCats(); hppRenderTable();
+  });
+  $('hpp-bulk-mode').addEventListener('click', e => {
+    const b = e.target.closest('.seg-opt');
+    if (!b) return;
+    document.querySelectorAll('#hpp-bulk-mode .seg-opt').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+  });
+  $('hpp-bulk-cat-btn').addEventListener('click', () => {
+    if (!$('hpp-bulk-val').value.trim()){ showToast('Isi nilai margin dulu'); return; }
+    showConfirm('Terapkan margin ke SEMUA barang di kategori "'+hppActiveCat+'"? Harga Jual yang sudah ada akan ditimpa.', 'Terapkan', false, () => hppApplyBulkMargin('cat'));
+  });
+  $('hpp-bulk-all-btn').addEventListener('click', () => {
+    if (!$('hpp-bulk-val').value.trim()){ showToast('Isi nilai margin dulu'); return; }
+    showConfirm('Terapkan margin ke SEMUA barang di SEMUA kategori? Harga Jual yang sudah ada akan ditimpa.', 'Terapkan ke Semua', true, () => hppApplyBulkMargin('all'));
+  });
+  $('hpp-export-btn').addEventListener('click', hppExportExcel);
+  $('hpp-table').addEventListener('change', hppTableChange);
+  $('hpp-table').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.classList.contains('cell-inp')) e.target.blur();
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// SUPPLIER — sesi input harga per supplier/tanggal + analisis banding harga
+// Log (SK_LS_PRICELOG) TERPISAH dari item Stok — time-series, tak muat
+// sebagai field tunggal. Tiap entri baru MENIMPA item.hargaBeli langsung
+// ("harga TERAKHIR diinput" = acuan HPP saat ini, sesuai keputusan pemilik).
+// ═══════════════════════════════════════════════════════
+const SUP_COLORS = ['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)','var(--c7)','var(--c8)'];
+let supActiveCat = null, supSearch = '', supView = 'input';
+let supAnFrom = null, supAnTo = null, supAnSel = null;
+let supPickedItemId = null, supAddTarget = '';
+const supDraft = {};   // {itemId: teks harga yang sedang diketik} — sementara per sesi
+
+function supSetView(v){
+  supView = v;
+  document.querySelectorAll('#sup-subnav .sub-btn').forEach(b => b.classList.toggle('active', b.dataset.supview === v));
+  $('sup-view-input').style.display = v === 'input' ? '' : 'none';
+  $('sup-view-analisis').style.display = v === 'analisis' ? '' : 'none';
+  if (v === 'analisis') supRenderAnalisis();
+  if (typeof gSeekUpdate === 'function') setTimeout(gSeekUpdate, 60);
+}
+function supRenderAll(){
+  supRenderPicker();
+  if (!$('sup-date').value) $('sup-date').value = todayInput();
+  if (!supActiveCat || !skState.cats.includes(supActiveCat)) supActiveCat = skState.cats[0] || null;
+  supRenderCats();
+  supRenderInputTable();
+  if (supView === 'analisis') supRenderAnalisis();
+}
+function supRenderPicker(){
+  const sel = $('sup-picker');
+  const cur = sel.value;
+  sel.innerHTML = hppSuppliers.length
+    ? hppSuppliers.map(s => '<option value="'+esc(s)+'">'+esc(s)+'</option>').join('')
+    : '<option value="">— belum ada supplier —</option>';
+  if (hppSuppliers.includes(cur)) sel.value = cur;
+  $('sup-session-lbl').textContent = sel.value || 'pilih supplier';
+}
+function supRenderCats(){
+  $('sup-cat-bar').innerHTML = skState.cats.map(c =>
+    '<button class="cat-tab'+(c===supActiveCat?' active':'')+'" data-supcat="'+esc(c)+'">'+esc(c)+'</button>').join('');
+}
+function supInputRows(){
+  const items = skState.items[supActiveCat] || [];
+  if (!supSearch) return items;
+  return items.filter(i => i.name.toLowerCase().includes(supSearch));
+}
+function supRenderInputTable(){
+  const tbl = $('sup-input-table');
+  const items = supActiveCat ? supInputRows() : [];
+  if (!items.length){
+    tbl.innerHTML = '<tbody><tr><td style="text-align:center;color:var(--ink4);padding:26px;">'+
+      (supSearch ? 'Tidak ketemu' : 'Belum ada barang di kategori ini') + '</td></tr></tbody>';
+    return;
+  }
+  let h = '<thead><tr><th>Nama</th><th>Satuan</th><th class="num">Harga Sebelumnya</th><th class="num">Harga Baru</th></tr></thead><tbody>';
+  items.forEach(it => {
+    const draftVal = supDraft[it.id] !== undefined ? supDraft[it.id] : '';
+    h += '<tr data-id="'+it.id+'">' +
+      '<td>'+esc(it.name)+'</td>' +
+      '<td style="color:var(--ink3);">'+esc(it.unit)+'</td>' +
+      '<td class="num" style="color:var(--ink3);">'+(it.hargaBeli?fmtRp(it.hargaBeli):'—')+'</td>' +
+      '<td class="num"><input type="text" inputmode="decimal" class="cell-inp sup-price-inp" value="'+esc(draftVal)+'" placeholder="—"></td>' +
+      '</tr>';
+  });
+  h += '</tbody>';
+  tbl.innerHTML = h;
+}
+function supSaveSession(){
+  const supplier = $('sup-picker').value;
+  if (!supplier){ showToast('Pilih atau tambah supplier dulu'); return; }
+  const tanggal = $('sup-date').value || todayInput();
+  const rows = document.querySelectorAll('#sup-input-table tbody tr[data-id]');
+  let n = 0;
+  rows.forEach(tr => {
+    const inp = tr.querySelector('.sup-price-inp');
+    const val = hppParseAngka(inp.value);
+    if (!val) return;
+    const item = hppFindItem(tr.dataset.id);
+    if (!item) return;
+    hppLog.push({ id:makeId(), ts:Date.now(), tanggal, supplier, itemId:item.id, nama:item.name, unit:item.unit, hargaBeli:val });
+    item.hargaBeli = val;   // "harga terakhir diinput" = acuan HPP saat ini
+    n++;
+  });
+  if (!n){ showToast('Belum ada harga yang diisi'); return; }
+  lsSet(SK_LS_PRICELOG, hppLog);
+  lsSet(SK_LS_KEY, skState);
+  skTrackAct(n+' harga disimpan dari supplier "'+supplier+'" ('+tanggal+')');
+  for (const k in supDraft) delete supDraft[k];
+  supRenderInputTable();
+  hppRenderTable();
+  showToast('✓ '+n+' harga tersimpan dari '+supplier);
+}
+function supOpenAddSupplier(){
+  supAddTarget = '';
+  $('sup-add-title').textContent = 'Supplier Baru';
+  $('sup-add-input').value = '';
+  $('sup-add-del').style.display = 'none';
+  $('sup-add-err').textContent = '';
+  $('sup-add-overlay').classList.add('open');
+  setTimeout(() => $('sup-add-input').focus(), 60);
+}
+function supOpenEditSupplier(name){
+  supAddTarget = name;
+  $('sup-add-title').textContent = 'Edit "'+name+'"';
+  $('sup-add-input').value = name;
+  $('sup-add-del').style.display = '';
+  $('sup-add-err').textContent = '';
+  $('sup-add-overlay').classList.add('open');
+  setTimeout(() => $('sup-add-input').focus(), 60);
+}
+function supSubmitAdd(){
+  const val = $('sup-add-input').value.trim();
+  const err = $('sup-add-err');
+  if (!val) return;
+  if (!supAddTarget){
+    if (hppSuppliers.includes(val)){ err.textContent = 'Supplier sudah ada!'; return; }
+    hppSuppliers.push(val);
+  } else if (val !== supAddTarget){
+    if (hppSuppliers.includes(val)){ err.textContent = 'Nama sudah dipakai!'; return; }
+    hppSuppliers[hppSuppliers.indexOf(supAddTarget)] = val;
+    hppLog.forEach(e => { if (e.supplier === supAddTarget) e.supplier = val; });   // rename ikut ke riwayat
+    lsSet(SK_LS_PRICELOG, hppLog);
+  }
+  lsSet(SK_LS_SUPPLIERS, hppSuppliers);
+  $('sup-add-overlay').classList.remove('open');
+  supRenderPicker();
+  $('sup-picker').value = val;
+  $('sup-session-lbl').textContent = val;
+  if (supView === 'analisis') supRenderAnalisis();
+}
+function supDeleteSupplier(){
+  hppSuppliers = hppSuppliers.filter(s => s !== supAddTarget);
+  lsSet(SK_LS_SUPPLIERS, hppSuppliers);
+  // riwayat harga dari supplier ini TETAP disimpan (histori tak dihapus, cuma
+  // tak lagi bisa dipilih untuk sesi baru) — sama prinsip Arsip yang tak ikut
+  // terhapus saat kategori sumbernya diganti.
+  $('sup-add-overlay').classList.remove('open');
+  supRenderPicker();
+  showToast('"'+supAddTarget+'" dihapus dari daftar supplier');
+}
+function supFilteredLog(){
+  return hppLog.filter(e => {
+    if (supAnFrom && e.tanggal < supAnFrom) return false;
+    if (supAnTo && e.tanggal > supAnTo) return false;
+    return true;
+  });
+}
+function supArcPath(cx, cy, r, a0, a1){
+  const x0 = cx + r*Math.cos(a0), y0 = cy + r*Math.sin(a0);
+  const x1 = cx + r*Math.cos(a1), y1 = cy + r*Math.sin(a1);
+  const large = (a1-a0) > Math.PI ? 1 : 0;
+  return 'M '+x0.toFixed(2)+' '+y0.toFixed(2)+' A '+r+' '+r+' 0 '+large+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2);
+}
+function supRenderDonut(){
+  const svg = $('sup-donut');
+  const log = supFilteredLog();
+  const groups = {};
+  log.forEach(e => { (groups[e.supplier] = groups[e.supplier] || {supplier:e.supplier, n:0}).n++; });
+  const arr = Object.values(groups).sort((a,b) => b.n - a.n);
+  const total = arr.reduce((s,g) => s+g.n, 0);
+  if (supAnSel && !arr.some(g => g.supplier === supAnSel)) supAnSel = null;
+  if (!total){
+    svg.innerHTML = '<circle cx="110" cy="110" r="82" fill="none" stroke="var(--bg2)" stroke-width="30"/>';
+    $('sup-donut-val').textContent = '—';
+    $('sup-donut-lbl').textContent = 'belum ada data';
+    $('sup-legend').innerHTML = '<div class="empty" style="padding:16px;"><div class="empty-sub">Simpan sesi input harga dulu di tab Input Harga</div></div>';
+    return;
+  }
+  const cx=110, cy=110, r=82, W=30, gap = 2.5/r;
+  let a = -Math.PI/2, paths = '';
+  arr.forEach((g,i) => {
+    g.color = SUP_COLORS[i % SUP_COLORS.length];
+    const span = g.n/total*Math.PI*2;
+    const a0 = a+gap/2, a1 = a+span-gap/2;
+    if (a1 > a0){
+      const dim = supAnSel && supAnSel !== g.supplier;
+      paths += '<path d="'+supArcPath(cx,cy,r,a0,a1)+'" fill="none" stroke="'+g.color+'" stroke-width="'+W+'" stroke-linecap="butt" data-sup="'+esc(g.supplier)+'"'+(dim?' style="opacity:.3;"':'')+'></path>';
+    }
+    a += span;
+  });
+  svg.innerHTML = paths;
+  const sel = supAnSel ? arr.find(g => g.supplier === supAnSel) : null;
+  $('sup-donut-val').textContent = sel ? sel.n : total;
+  $('sup-donut-lbl').textContent = sel ? (sel.n/total*100).toFixed(1)+'% dari total' : 'total entri';
+  $('sup-legend').innerHTML = arr.map(g =>
+    '<button class="ar-leg-row'+(supAnSel===g.supplier?' sel':'')+'" data-supleg="'+esc(g.supplier)+'"'+(supAnSel&&supAnSel!==g.supplier?' style="opacity:.45;"':'')+'>' +
+    '<span class="ar-leg-dot" style="background:'+g.color+';"></span>' +
+    '<span class="ar-leg-name">'+esc(g.supplier)+'</span>' +
+    '<span class="ar-leg-val">'+g.n+' entri</span></button>').join('');
+}
+function supAllItemNames(){
+  const seen = new Set(), out = [];
+  supFilteredLog().forEach(e => {
+    if (seen.has(e.itemId)) return;
+    seen.add(e.itemId);
+    out.push({ itemId:e.itemId, nama:e.nama });
+  });
+  return out;
+}
+function supRenderItemPicks(q){
+  const box = $('sup-item-picks');
+  if (!q){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  const ql = q.toLowerCase();
+  const matches = supAllItemNames().filter(x => x.nama.toLowerCase().includes(ql)).slice(0,20);
+  box.innerHTML = matches.length
+    ? matches.map(x => '<div class="cd-item" data-pickitem="'+x.itemId+'"><div class="cd-item-name">'+esc(x.nama)+'</div></div>').join('')
+    : '<div class="cd-empty">Tidak ketemu</div>';
+  box.style.display = 'block';
+}
+function supRenderItemChart(){
+  const box = $('sup-item-chart');
+  if (!supPickedItemId){ box.innerHTML = ''; return; }
+  const entries = supFilteredLog().filter(e => e.itemId === supPickedItemId);
+  if (!entries.length){ box.innerHTML = '<div class="empty-sub">Belum ada riwayat harga untuk barang ini di rentang filter.</div>'; return; }
+  const nama = entries[entries.length-1].nama;
+  const bySupplier = {};
+  entries.forEach(e => { if (!bySupplier[e.supplier] || e.ts > bySupplier[e.supplier].ts) bySupplier[e.supplier] = e; });
+  const ranked = Object.values(bySupplier).sort((a,b) => a.hargaBeli - b.hargaBeli);
+  const maxHarga = Math.max.apply(null, ranked.map(e => e.hargaBeli));
+  const cheapest = ranked[0] ? ranked[0].supplier : null;
+  let h = '<div style="font-weight:600;margin-bottom:8px;">'+esc(nama)+'</div>';
+  ranked.forEach(e => {
+    const isCheapest = e.supplier === cheapest;
+    h += '<div class="hbar-row'+(isCheapest?' cheapest':'')+'">' +
+      '<div class="hbar-lbl">'+esc(e.supplier)+(isCheapest?' 🏆':'')+'</div>' +
+      '<div class="hbar-track"><div class="hbar-fill" style="width:'+(e.hargaBeli/maxHarga*100).toFixed(1)+'%"></div></div>' +
+      '<div class="hbar-val">'+fmtRp(e.hargaBeli)+'</div></div>';
+  });
+  h += '<div class="hbar-meta">Harga terbaru tiap supplier · diurutkan termurah dulu</div>';
+  h += '<div class="tbl-wrap" style="margin-top:14px;"><table><thead><tr><th>Tanggal</th><th>Supplier</th><th class="num">Harga</th><th></th></tr></thead><tbody>';
+  entries.slice().sort((a,b) => b.ts - a.ts).forEach(e => {
+    h += '<tr><td style="font-family:var(--mono);font-size:11.5px;">'+esc(e.tanggal)+'</td><td>'+esc(e.supplier)+'</td>' +
+      '<td class="num">'+fmtRp(e.hargaBeli)+'</td>' +
+      '<td style="text-align:center;"><button class="ar-del-date" style="float:none;" data-suplogdel="'+e.id+'" title="Hapus entri ini">✕</button></td></tr>';
+  });
+  h += '</tbody></table></div>';
+  box.innerHTML = h;
+}
+function supRenderAnalisis(){
+  supRenderDonut();
+  supRenderItemChart();
+}
+function supDeleteLogEntry(logId){
+  const idx = hppLog.findIndex(e => e.id === logId);
+  if (idx < 0) return;
+  const removed = hppLog[idx];
+  hppLog.splice(idx, 1);
+  lsSet(SK_LS_PRICELOG, hppLog);
+  // "usahakan hitungan tetap valid": Harga Beli item dihitung ULANG dari
+  // entri yang TERSISA (bukan cuma dicek "apa yang dihapus itu terbaru?") —
+  // sama prinsip seperti hapus-per-tanggal di PNL.
+  const item = hppFindItem(removed.itemId);
+  if (item){
+    const remaining = hppLog.filter(e => e.itemId === removed.itemId).sort((a,b) => b.ts - a.ts);
+    item.hargaBeli = remaining.length ? remaining[0].hargaBeli : undefined;
+    lsSet(SK_LS_KEY, skState);
+  }
+  supRenderAnalisis();
+  hppRenderTable();
+  showToast('Entri harga dihapus');
+}
+function supInit(){
+  $('sup-subnav').addEventListener('click', e => {
+    const b = e.target.closest('.sub-btn');
+    if (b) supSetView(b.dataset.supview);
+  });
+  $('sup-picker').addEventListener('change', function(){ $('sup-session-lbl').textContent = this.value || 'pilih supplier'; });
+  $('sup-add-btn').addEventListener('click', supOpenAddSupplier);
+  $('sup-picker').addEventListener('dblclick', function(){ if (this.value) supOpenEditSupplier(this.value); });
+  $('sup-add-ok').addEventListener('click', supSubmitAdd);
+  $('sup-add-del').addEventListener('click', () => showConfirm('Hapus supplier "'+supAddTarget+'"? Riwayat harga yang sudah tersimpan TETAP aman.', 'Hapus', true, supDeleteSupplier));
+  $('sup-add-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') supSubmitAdd();
+    if (e.key === 'Escape') $('sup-add-overlay').classList.remove('open');
+  });
+  $('sup-cat-bar').addEventListener('click', e => {
+    const b = e.target.closest('[data-supcat]');
+    if (!b) return;
+    supActiveCat = b.dataset.supcat;
+    supRenderCats(); supRenderInputTable();
+  });
+  $('sup-search').addEventListener('input', function(){ supSearch = this.value.trim().toLowerCase(); supRenderInputTable(); });
+  $('sup-input-table').addEventListener('input', e => {
+    const inp = e.target.closest('.sup-price-inp');
+    if (!inp) return;
+    supDraft[inp.closest('tr').dataset.id] = inp.value;
+  });
+  $('sup-save-btn').addEventListener('click', () => {
+    showConfirm('Simpan sesi harga dari "'+($('sup-picker').value||'-')+'" tanggal '+$('sup-date').value+'? Harga Beli barang yang diisi akan diperbarui.', 'Simpan', false, supSaveSession);
+  });
+  $('sup-an-filter-btn').addEventListener('click', () => {
+    supAnFrom = $('sup-an-from').value || null;
+    supAnTo = $('sup-an-to').value || null;
+    supRenderAnalisis();
+  });
+  $('sup-an-reset-btn').addEventListener('click', () => {
+    $('sup-an-from').value = ''; $('sup-an-to').value = '';
+    supAnFrom = null; supAnTo = null;
+    supRenderAnalisis();
+  });
+  $('sup-donut').addEventListener('click', e => {
+    const p = e.target.closest('[data-sup]');
+    if (!p) return;
+    supAnSel = supAnSel === p.dataset.sup ? null : p.dataset.sup;
+    supRenderDonut();
+  });
+  $('sup-legend').addEventListener('click', e => {
+    const b = e.target.closest('[data-supleg]');
+    if (!b) return;
+    supAnSel = supAnSel === b.dataset.supleg ? null : b.dataset.supleg;
+    supRenderDonut();
+  });
+  $('sup-item-search').addEventListener('input', function(){ supRenderItemPicks(this.value.trim()); });
+  $('sup-item-picks').addEventListener('click', e => {
+    const it = e.target.closest('[data-pickitem]');
+    if (!it) return;
+    supPickedItemId = it.dataset.pickitem;
+    $('sup-item-search').value = it.querySelector('.cd-item-name').textContent;
+    $('sup-item-picks').style.display = 'none';
+    supRenderItemChart();
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#sup-item-search') && !e.target.closest('#sup-item-picks')) $('sup-item-picks').style.display = 'none';
+  });
+  $('sup-item-chart').addEventListener('click', e => {
+    const b = e.target.closest('[data-suplogdel]');
+    if (!b) return;
+    showConfirm('Hapus entri harga ini?', 'Hapus', true, () => supDeleteLogEntry(b.dataset.suplogdel));
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// GENERATOR .xlsx MINIMAL — tanpa dependensi eksternal (konsisten dengan
+// prinsip app ini: dependensi CDN cuma yang benar-benar perlu & di-guard).
+// ZIP "stored" (tanpa kompresi, cukup untuk data tabular kecil) + XML OOXML
+// minimal 1 sheet, sel angka & inline-string. Tidak dukung style/formula —
+// tidak dibutuhkan untuk kebutuhan export tabel ini.
+// ═══════════════════════════════════════════════════════
+function xlsxCrc32(buf){
+  let c, crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++){
+    c = (crc ^ buf[i]) & 0xFF;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function xlsxColLetter(n){
+  let s = ''; n++;
+  while (n > 0){ const m = (n-1) % 26; s = String.fromCharCode(65+m) + s; n = Math.floor((n-1)/26); }
+  return s;
+}
+function xlsxEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function xlsxSheetXml(headers, rows){
+  let rowsXml = '';
+  const wr = (rIdx, cells) => {
+    rowsXml += '<row r="'+rIdx+'">';
+    cells.forEach((v, cIdx) => {
+      const ref = xlsxColLetter(cIdx) + rIdx;
+      if (typeof v === 'number' && isFinite(v)) rowsXml += '<c r="'+ref+'"><v>'+v+'</v></c>';
+      else rowsXml += '<c r="'+ref+'" t="inlineStr"><is><t xml:space="preserve">'+xlsxEsc(v==null?'':v)+'</t></is></c>';
+    });
+    rowsXml += '</row>';
+  };
+  wr(1, headers);
+  rows.forEach((r,i) => wr(i+2, r));
+  const dim = xlsxColLetter(Math.max(0,headers.length-1)) + (rows.length+1);
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<dimension ref="A1:'+dim+'"/><sheetData>'+rowsXml+'</sheetData></worksheet>';
+}
+function xlsxZip(files){
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  files.forEach(f => {
+    const data = enc.encode(f.content);
+    const nameBuf = enc.encode(f.name);
+    const crc = xlsxCrc32(data);
+    const lh = new Uint8Array(30 + nameBuf.length);
+    const ldv = new DataView(lh.buffer);
+    ldv.setUint32(0, 0x04034b50, true); ldv.setUint16(4, 20, true); ldv.setUint16(6, 0, true);
+    ldv.setUint16(8, 0, true); ldv.setUint16(10, 0, true); ldv.setUint16(12, 0, true);
+    ldv.setUint32(14, crc, true); ldv.setUint32(18, data.length, true); ldv.setUint32(22, data.length, true);
+    ldv.setUint16(26, nameBuf.length, true); ldv.setUint16(28, 0, true);
+    lh.set(nameBuf, 30);
+    parts.push(lh, data);
+
+    const ch = new Uint8Array(46 + nameBuf.length);
+    const cdv = new DataView(ch.buffer);
+    cdv.setUint32(0, 0x02014b50, true); cdv.setUint16(4, 20, true); cdv.setUint16(6, 20, true);
+    cdv.setUint16(8, 0, true); cdv.setUint16(10, 0, true); cdv.setUint16(12, 0, true); cdv.setUint16(14, 0, true);
+    cdv.setUint32(16, crc, true); cdv.setUint32(20, data.length, true); cdv.setUint32(24, data.length, true);
+    cdv.setUint16(28, nameBuf.length, true); cdv.setUint16(30, 0, true); cdv.setUint16(32, 0, true);
+    cdv.setUint16(34, 0, true); cdv.setUint16(36, 0, true); cdv.setUint32(38, 0, true); cdv.setUint32(42, offset, true);
+    ch.set(nameBuf, 46);
+    central.push(ch);
+    offset += lh.length + data.length;
+  });
+  const centralStart = offset;
+  let centralSize = 0;
+  central.forEach(c => centralSize += c.length);
+  const end = new Uint8Array(22);
+  const edv = new DataView(end.buffer);
+  edv.setUint32(0, 0x06054b50, true); edv.setUint16(4, 0, true); edv.setUint16(6, 0, true);
+  edv.setUint16(8, files.length, true); edv.setUint16(10, files.length, true);
+  edv.setUint32(12, centralSize, true); edv.setUint32(16, centralStart, true); edv.setUint16(20, 0, true);
+  const total = parts.reduce((s,p) => s+p.length, 0) + centralSize + end.length;
+  const out = new Uint8Array(total);
+  let p = 0;
+  parts.forEach(part => { out.set(part, p); p += part.length; });
+  central.forEach(c => { out.set(c, p); p += c.length; });
+  out.set(end, p);
+  return out;
+}
+function downloadXlsx(filename, sheetName, headers, rows){
+  const contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '</Types>';
+  const rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>';
+  const workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets><sheet name="'+xlsxEsc(sheetName||'Sheet1')+'" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  const workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '</Relationships>';
+  const sheet = xlsxSheetXml(headers, rows);
+  const bytes = xlsxZip([
+    {name:'[Content_Types].xml', content: contentTypes},
+    {name:'_rels/.rels', content: rootRels},
+    {name:'xl/workbook.xml', content: workbook},
+    {name:'xl/_rels/workbook.xml.rels', content: workbookRels},
+    {name:'xl/worksheets/sheet1.xml', content: sheet},
+  ]);
+  const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // ── BACKUP / RESTORE STOK (aturan: mode selalu 'worker') ──
 async function skExportJSON(){
   skState.output = skBuildOutput();
-  const data = JSON.stringify({...skState, mode:'worker'}, null, 2);
+  // hppSuppliers/hppLog: key localStorage terpisah dari skState (lihat §7/§8
+  // dok teknis) — ditambahkan eksplisit di sini supaya "Backup Stok" (khusus
+  // modul ini) ikut lengkap, konsisten dengan "Backup Gabungan".
+  const data = JSON.stringify({...skState, mode:'worker', hppSuppliers, hppLog}, null, 2);
   const d = new Date();
   const fn = 'stok-'+String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getFullYear()).slice(2)+'.json';
   const blob = new Blob([data], {type:'application/json'});
@@ -4437,8 +5225,17 @@ function skImportJSON(file){
     try {
       const d = JSON.parse(ev.target.result);
       if (!d.cats || !d.items) throw new Error();
+      const impSuppliers = Array.isArray(d.hppSuppliers) ? d.hppSuppliers : [];
+      const impLog = Array.isArray(d.hppLog) ? d.hppLog : [];
+      delete d.hppSuppliers; delete d.hppLog;
       skState = skSanitizeImport(d);
       lsSet(SK_LS_KEY, skState);
+      // suppliers/pricelog: gabung (union), bukan timpa — lihat catatan sama di applySyncPayload
+      impSuppliers.forEach(s => { if (!hppSuppliers.includes(s)) hppSuppliers.push(s); });
+      lsSet(SK_LS_SUPPLIERS, hppSuppliers);
+      const localIds = new Set(hppLog.map(e => e.id));
+      impLog.forEach(e => { if (!localIds.has(e.id)) hppLog.push(e); });
+      lsSet(SK_LS_PRICELOG, hppLog);
       skRender();
       skSyncOutput();
       showToast('Restore stok berhasil!');
@@ -4726,6 +5523,13 @@ function skInit(){
     document.addEventListener(ev, skOnActivity, {passive:true}));
   document.addEventListener('click', skCloseUnitPops);
 
+  $('sk-subnav').addEventListener('click', e => {
+    const b = e.target.closest('.sub-btn');
+    if (b) skSetView(b.dataset.skview);
+  });
+  hppInit();
+  supInit();
+
   skRender();
   if (skIsBoss()) skResetTimer();
   setInterval(() => {
@@ -4787,7 +5591,10 @@ function collectSyncPayload(){
   }
   if ($('g-sm-stok').checked){
     if (!skIsBoss()) return { error: 'Kirim data Stok butuh Mode Bos — atau hilangkan centangnya.' };
-    mods.stok = { boss: {...skState, output: skBuildOutput(), mode:'worker'} };
+    // suppliers/pricelog: key localStorage TERPISAH dari skState (lihat §7/§8
+    // dok teknis) — isi/hargaBeli/hargaJual per item sudah ikut lewat spread
+    // skState di atas, tapi daftar supplier & riwayat harga harus eksplisit.
+    mods.stok = { boss: {...skState, output: skBuildOutput(), mode:'worker'}, suppliers: hppSuppliers, pricelog: hppLog };
   }
   if (!Object.keys(mods).length) return { error: 'Pilih minimal satu modul.' };
   return { payload: { type:'berkah-sync', version: 1, sent: Date.now(), modules: mods } };
@@ -4830,6 +5637,19 @@ function applySyncPayload(msg){
   if (m.stok && m.stok.boss){
     skState = skSanitizeImport(m.stok.boss);
     lsSet(SK_LS_KEY, skState);
+    // suppliers/pricelog: GABUNG (union), bukan timpa — beda dari skState di
+    // atas yang memang diganti utuh. Riwayat harga itu append-only per
+    // desain (mirip arsip), jadi merge lebih aman: sync/restore tak pernah
+    // menghapus histori yang sudah ada di device ini.
+    if (Array.isArray(m.stok.suppliers)){
+      m.stok.suppliers.forEach(s => { if (!hppSuppliers.includes(s)) hppSuppliers.push(s); });
+      lsSet(SK_LS_SUPPLIERS, hppSuppliers);
+    }
+    if (Array.isArray(m.stok.pricelog)){
+      const localIds = new Set(hppLog.map(e => e.id));
+      m.stok.pricelog.forEach(e => { if (!localIds.has(e.id)) hppLog.push(e); });
+      lsSet(SK_LS_PRICELOG, hppLog);
+    }
     skRender(); skSyncOutput();
     applied.push('Stok');
   }
@@ -4956,7 +5776,7 @@ async function backupAll(){
       days: lsGet(PN_LS_DAYS, {}),
       arsip: lsGet(PN_LS_ARS, {}),
     },
-    stok: { boss: {...skState, mode:'worker'} },   // aturan: tidak pernah 'boss'
+    stok: { boss: {...skState, mode:'worker'}, suppliers: hppSuppliers, pricelog: hppLog },   // aturan: tidak pernah 'boss'
   };
   const d = new Date();
   const fn = 'berkah-'+String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getFullYear()).slice(2)+'.json';

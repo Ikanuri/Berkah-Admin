@@ -162,9 +162,29 @@ function check(name, cond, extra){
   const pinOpen = await page.$eval('#sk-pin-overlay', el => el.classList.contains('open'));
   check('Gesture 5× tap nav bawah → PIN', pinOpen);
 
+  // 7. buat PIN → Mode Bos → tab HPP/Supplier (fitur baru) render aman di layar sempit
+  for (const d of ['1','2','3','4']) await tapSafe('#sk-pin-grid [data-k="'+d+'"]');
+  await page.waitForTimeout(300);
+  for (const d of ['1','2','3','4']) await tapSafe('#sk-pin-grid [data-k="'+d+'"]');
+  await page.waitForTimeout(400);
+  const bossBadgeM = await page.$eval('#sk-mode-badge', el => el.style.display !== 'none');
+  check('Mode Bos aktif di mobile', bossBadgeM);
+  const subnavVisibleM = await page.$eval('#sk-subnav', el => getComputedStyle(el).display !== 'none');
+  check('Subnav HPP/Supplier tampil di mobile (Mode Bos)', subnavVisibleM);
+  await tapSafe('#sk-subnav [data-skview="hpp"]');
+  await page.waitForTimeout(300);
+  const hppVisibleM = await page.$eval('#sk-view-hpp', el => getComputedStyle(el).display !== 'none');
+  check('Tab HPP terbuka & render di layar mobile', hppVisibleM);
+  await tapSafe('#sk-subnav [data-skview="supplier"]');
+  await page.waitForTimeout(300);
+  await tapSafe('#sup-subnav [data-supview="analisis"]');
+  await page.waitForTimeout(300);
+  const supDonutWidthM = await page.$eval('#sup-donut', el => el.getBoundingClientRect().width);
+  check('Tab Supplier (Analisis) terbuka & donut punya ukuran valid di mobile', supDonutWidthM > 0, supDonutWidthM);
+  await tapSafe('#sk-exit-btn');
+  await page.waitForTimeout(300);
+
   // screenshot mobile
-  await page.keyboard.press('Escape');
-  await page.$eval('#sk-pin-overlay', el => el.classList.remove('open'));
   await tapSafe('#g-bottom-nav [data-mod="nota"]');
   await page.waitForTimeout(400);
   await page.screenshot({ path: __dirname + '/shot-mobile.png' });

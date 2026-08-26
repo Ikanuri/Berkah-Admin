@@ -200,6 +200,46 @@ menunjukkan sisa).
   filter tanggal centang + badge umur ("hari ini/kemarin/Xh lalu").
 - **Keluar Bos** saat HP dipegang orang lain.
 
+### 💰 HPP — kalkulator harga pokok (khusus Mode Bos)
+Ketuk tab **💰 HPP** (sejajar Checklist) — memakai kategori & nama barang yang
+sama persis dengan Checklist, jadi tidak perlu input ulang. **Karyawan tidak
+pernah melihat tab ini** — harga modal itu data sensitif.
+
+Untuk tiap barang, isi:
+- **Isi** — berapa satuan eceran dalam satu satuan beli (mis. 1 dus isi 16 pcs).
+- **Harga Beli** — harga per satuan beli (per dus/pak/dst).
+- **Harga Pokok/Ecer** terisi otomatis (Harga Beli ÷ Isi) — tidak perlu dihitung manual.
+- **Harga Jual** — harga jual Anda per satuan eceran.
+- **Margin** terisi otomatis (Harga Jual − Harga Pokok), warna hijau (untung)
+  atau merah (rugi). Bisa juga **diketik langsung**: isi Margin yang diinginkan
+  → Harga Jual otomatis menyesuaikan (Harga Pokok + Margin).
+
+**Terapkan Margin Massal** — untuk atur margin banyak barang sekaligus (mis.
+semua camilan Rp 250 di atas modal): isi angka, pilih **Rp** (nominal tetap)
+atau **%** (persen dari harga pokok), lalu **Terapkan ke kategori ini** atau
+**Terapkan ke SEMUA kategori**. Ini **menimpa** Harga Jual yang sudah ada —
+barang yang Isi/Harga Belinya belum diisi otomatis dilewati.
+
+Tombol **⬇ Excel** mengunduh seluruh daftar HPP sebagai file `.xlsx` asli
+(bisa dibuka langsung di Excel/Google Sheets/WPS).
+
+### 🚚 Supplier — banding harga & lacak termurah (khusus Mode Bos)
+Ketuk tab **🚚 Supplier**. Ada dua bagian:
+
+**📥 Input Harga** — tiap kali belanja/dapat penawaran dari supplier: pilih
+nama **Supplier** (ketuk **+ Supplier** kalau belum ada di daftar; ketuk dua
+kali nama supplier di kotak pilihan untuk ganti nama/hapus) dan **Tanggal**,
+lalu isi harga barang yang relevan (boleh sebagian saja, tidak perlu semua) →
+**💾 Simpan Sesi**. Harga yang baru diinput otomatis jadi **Harga Beli** acuan
+di tab HPP — tapi riwayat lengkapnya tetap tersimpan untuk dibandingkan.
+
+**📊 Analisis** — ringkasan donat menunjukkan berapa banyak harga yang pernah
+tercatat dari tiap supplier (bisa difilter rentang tanggal). Di bawahnya, cari
+nama barang untuk **membandingkan harga terbaru tiap supplier** — diurutkan
+termurah dulu, supplier termurah ditandai 🏆 hijau. Tabel riwayat lengkap di
+bawahnya bisa dihapus per baris kalau ada salah input (Harga Beli barang
+otomatis kembali ke entri tersisa yang paling baru).
+
 ---
 
 ## ⚙ Pengaturan (ikon gerigi kanan atas)

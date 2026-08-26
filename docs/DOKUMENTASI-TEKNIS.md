@@ -39,7 +39,7 @@ Satu file `index.html` (±210 KB) berisi tiga aplikasi toko grosir:
 |---|---|---|
 | **Nota Kulakan** | `nk` | Daftar belanja teks bebas → cocokkan ke DB produk CSV → nota thermal |
 | **PNL Analyzer** | `pn` / `ars` | Template harian ber-hashtag → analisis profit-loss + arsip pengeluaran/prive |
-| **Stok Kosong** | `sk` | Checklist stok dua-mode (Bos ↔ Karyawan) dengan PIN & sync |
+| **Stok Kosong** | `sk` / `hpp` / `sup` | Checklist stok dua-mode (Bos ↔ Karyawan) dengan PIN & sync + sub-tab HPP (kalkulator harga pokok) & Supplier (banding harga), boss-only |
 
 Prefix global: `g` (shell, tema, sync, modal bersama).
 
@@ -100,7 +100,7 @@ Setiap aturan lahir dari bug nyata (lihat §12):
    `new Date('YYYY-MM-DD')` (itu UTC midnight → geser tanggal di WIB).
 4. **Escape semua data user** sebelum masuk innerHTML — helper `esc()`.
 5. **`skActive()` untuk semua operasi item Stok** — tidak pernah `skState` langsung
-   kecuali fungsi khusus-bos (kategori, PIN, log, reply, export).
+   kecuali fungsi khusus-bos (kategori, PIN, log, reply, export, **HPP, Supplier**).
 6. **`state.mode` di storage Stok tidak pernah `'boss'`** — selalu `'worker'`
    (backup/sync tidak boleh bisa bypass PIN).
 7. **Jangan pakai class CSS `empty` untuk state lain** — sudah dipakai empty-state
@@ -135,6 +135,8 @@ Setiap aturan lahir dari bug nyata (lihat §12):
 | `stok-timeout` | Stok | menit timeout (0 = tidak pernah) |
 | `stok-oor` | Stok | tampilan item di luar filter: `'dim' \| 'hide'` |
 | `stok-output-ts` | Stok | header tanggal di output: `'show' \| 'hide'` |
+| `stok-hpp-suppliers` | Stok (HPP) | `string[]` — daftar nama supplier |
+| `stok-hpp-pricelog` | Stok (HPP) | `[{id, ts, tanggal, supplier, itemId, nama, unit, hargaBeli}]` — riwayat harga, append-only. `isi`/`hargaBeli`/`hargaJual` HPP itu sendiri **bukan** key terpisah — nempel di item `stok-boss-data` (lihat §8) |
 
 Total pemakaian tipikal (DB 2.774 produk + arsip setahun) ±600 KB — jauh di bawah kuota ±5 MB.
 
@@ -583,6 +585,125 @@ lastAct: { ts: Number /*epoch ms*/, desc: String }
   `skSanitizeImport` tidak perlu mengisi default karena renderer sudah
   meng-guard `if (!act)`.
 
+### Sub-tab HPP & Supplier (Mode Bos — prefix `hpp`/`sup`)
+Ditambahkan atas permintaan pemilik: kalkulator harga pokok + pelacakan harga
+per supplier, **murni reuse** kategori & nama dari Checklist (bukan modul/
+database terpisah). Subnav baru `#sk-subnav` (pola sama seperti PNL
+Analisis/Arsip): **☑ Checklist** / **💰 HPP** / **🚚 Supplier** — dua yang
+terakhir **hanya render & hanya terlihat kalau `skIsBoss()`** (`skSetView`
+memaksa balik ke `'checklist'` kalau dipanggil saat bukan bos; `skRenderHeader`
+toggle `display:flex/none` di `#sk-subnav` tiap render). Harga modal adalah
+data sensitif — karyawan tidak pernah melihat subnav ini sama sekali, apalagi
+tabnya.
+
+**Kenapa BUKAN reuse `skMakeCard`** (kartu drag+centang Checklist): kartu itu
+penuh interaksi checklist-spesifik (drag reorder, centang, unit-popup) yang
+tidak nyambung untuk mengetik angka harga. HPP & Supplier dirender sebagai
+**tabel** (pola sama seperti tabel Harian PNL) — baca-banyak-angka lebih pas
+di tabel daripada kartu.
+
+#### Model data — field NEMPEL di item yang sama, bukan tabel terpisah
+```js
+item = { id, name, qty, unit, checked, checkedAt,   // sudah ada (Checklist)
+         isi, hargaBeli, hargaJual }                // BARU (opsional, HPP)
+```
+`isi`/`hargaBeli`/`hargaJual` ditulis **langsung ke objek item yang sama** di
+`skState.items[kategori][i]` — bukan struktur/lookup terpisah berdasarkan id.
+Konsekuensi (semuanya disengaja, sesuai permintaan "murni reuse"):
+- Tambah/ubah/hapus/pindah-kategori/rename item di **Checklist** langsung
+  kelihatan di HPP — tidak ada langkah sync manual, karena memang objek yang
+  sama.
+- Ikut ke **backup Stok** (`skExportJSON`) dan **Backup Gabungan**
+  (`backupAll`/`collectSyncPayload`) "gratis" — keduanya sudah men-spread
+  seluruh `skState` termasuk item-itemnya.
+- `hppCost(item)` = `hargaBeli / isi` (harga pokok per satuan eceran) —
+  helper murni, dipanggil ulang tiap render, bukan field ter-cache (supaya
+  tidak pernah stale kalau `isi`/`hargaBeli` berubah).
+
+**Kolom Margin dua-arah** (`hppTableChange`): ubah **Harga Jual** → Margin
+otomatis mengikuti di render berikutnya (`margin = hargaJual − pokok`); ubah
+**Margin** → Harga Jual dihitung balik (`hargaJual = pokok + margin`) dan
+disimpan. Margin tidak bisa diisi kalau `hppCost(item)` masih 0 (Isi/Harga
+Beli belum lengkap) — muncul toast, input dikembalikan ke kosong via
+render-ulang. Warna Margin 2 tingkat sederhana (`pos`/`neg` — margin>0 atau
+tidak), BUKAN skema 3-tingkat target-based ala Margin Performa PNL (§7) —
+di sini tidak ada "target %" yang disepakati, cuma untung/rugi.
+
+**Bug ditemukan saat uji fitur ini** (lihat §12 N7 & N8) — dua kelas bug yang
+sudah pernah terjadi di modul lain, muncul lagi di kode baru:
+1. Class warna `pos/neg/warn` ditaruh di `<input class="cell-inp neg">`, tapi
+   CSS `td.pos/.neg/.warn` (§10) cuma menyasar elemen `<td>` — dan `.cell-inp`
+   sendiri sudah set `color` eksplisit sehingga warna tak pernah menang lewat
+   inheritance juga. Fix: aturan spesifik `tbody td input.cell-inp.pos/.neg/.warn`.
+2. `showConfirm()` dipanggil dari DALAM modal lain yang masih terbuka (hapus
+   supplier dari modal edit-nya) — semua `.overlay` berbagi `z-index:1000`,
+   jadi overlay konfirmasi bisa tertimbun modal yang lebih belakangan posisinya
+   di DOM. Ternyata bug LATEN lama (hapus kategori dari modalnya sendiri punya
+   pola identik, tak pernah diuji) — fix: `#g-confirm-overlay{z-index:1100;}`.
+
+#### Terapkan Margin Massal (bulk)
+`hppApplyBulkMargin(scope)` — `scope: 'cat' | 'all'`. Mode `Rp` (nilai flat)
+atau `%` (persen dari `hppCost(item)`, dipilih lewat segmented `#hpp-bulk-mode`).
+**MENIMPA** Harga Jual (bukan cuma mengisi yang kosong — sesuai permintaan
+eksplisit pemilik), item tanpa Isi/Harga Beli dilewati (dihitung & dilaporkan
+di toast). Selalu lewat `showConfirm` dulu (aksi mengubah banyak harga
+sekaligus, mirip level risiko "Hapus Semua Item").
+
+#### Supplier — log harga TERPISAH dari item, tapi menimpa `hargaBeli` langsung
+```js
+const SK_LS_SUPPLIERS = 'stok-hpp-suppliers';   // string[]
+const SK_LS_PRICELOG  = 'stok-hpp-pricelog';    // [{id, ts, tanggal, supplier, itemId, nama, unit, hargaBeli}]
+```
+Dua key **localStorage terpisah dari `skState`** (beda dari isi/hargaBeli/
+hargaJual di atas) — karena ini time-series (banyak entri per item lintas
+waktu), bukan field tunggal. `nama`/`unit` di-snapshot ke tiap entri log
+(bukan cuma `itemId`) supaya riwayat tetap terbaca bermakna walau item-nya
+sudah di-rename atau dihapus di Checklist.
+
+- **Alur input** (`sup-view-input`): pilih Supplier + Tanggal dulu → tabel
+  barang per-kategori (reuse kategori Stok) dengan kolom "Harga Baru" kosong →
+  isi sebanyak yang mau → **Simpan Sesi** (`supSaveSession`). Baris yang
+  dikosongkan (tidak diisi) dilewati, bukan dianggap 0.
+- **"Harga TERAKHIR diinput" = acuan HPP saat ini** (keputusan eksplisit
+  pemilik): tiap entri baru langsung `item.hargaBeli = val` — jadi kapanpun
+  cek tab HPP, Harga Beli selalu mencerminkan input supplier PALING BARU,
+  sambil riwayat lengkap tetap aman di `hppLog` untuk dibandingkan.
+- **Hapus entri** (`supDeleteLogEntry`): hitung ULANG `item.hargaBeli` dari
+  entri yang **tersisa** (`sort by ts desc`, ambil terbaru) — bukan cuma cek
+  "apa yang dihapus itu entri terbaru?". Prinsip sama dengan hapus-per-tanggal
+  PNL (§7): "usahakan hitungan tetap valid" dengan re-derive dari data yang
+  ada, bukan patch kondisional.
+- **Hapus supplier** (`supDeleteSupplier`): cuma hilang dari daftar pilihan —
+  riwayat harga (`hppLog`) TIDAK ikut terhapus (pola sama seperti Arsip PNL
+  yang tak terhapus saat kategori sumbernya diganti nama/dihapus).
+- **Analisis** (`sup-view-analisis`): donut `supRenderDonut` — kelompok per
+  supplier, nilai = **jumlah entri** (bukan total Rupiah — log tidak menyimpan
+  kuantitas beli, cuma harga per satuan, jadi "total belanja" tidak bisa
+  dihitung jujur; jumlah entri tetap bermakna untuk melihat mana supplier yang
+  paling sering dipakai). Palet warna `SUP_COLORS` reuse var `--c1..--c8` yang
+  sama (CVD-validated, lihat §7 donut Arsip) — filter tanggal `supAnFrom/To`
+  sama pola dengan filter Arsip.
+- **Bandingkan Harga per Barang** (`supRenderItemChart`): cari nama barang →
+  ambil entri **TERBARU per supplier** (bukan rata-rata / bukan entri lawas)
+  → urutkan termurah dulu sebagai bar horizontal (`.hbar-*`, CSS baru §10),
+  supplier termurah diberi class `.cheapest` (hijau + 🏆) — inilah jawaban
+  langsung untuk "barang X paling murah di supplier mana saat ini". Tabel
+  riwayat LENGKAP (semua entri, bukan cuma terbaru-per-supplier) ditampilkan
+  di bawahnya dengan tombol hapus per baris.
+
+#### Export .xlsx — generator dependency-free (`xlsxCrc32`/`xlsxZip`/`downloadXlsx`)
+Ditulis sendiri (bukan pinjam SheetJS dkk dari CDN) supaya tetap konsisten
+dengan prinsip aplikasi ini: dependensi eksternal seminim mungkin, semua fitur
+lain aman offline. ZIP format **"stored"** (tanpa kompresi — cukup untuk data
+tabular kecil, dan menghindari perlu implementasi DEFLATE) + XML OOXML minimal
+1 sheet, sel angka (`<v>`) & sel teks **inline string** (`t="inlineStr"`,
+bukan `sharedStrings.xml` — menyederhanakan, tak masalah untuk ukuran data
+export ini). CRC32 dihitung manual (wajib oleh spek ZIP walau method stored).
+**Diverifikasi round-trip**: `python3 -c "import zipfile; zipfile.ZipFile(f).testzip()"`
+→ `None` (nol entri korup), dan dibuka penuh oleh `openpyxl` (library Python
+independen) dengan isi & tipe sel benar — bukti file yang dihasilkan valid
+OOXML sungguhan, bukan CSV yang diganti nama ekstensi.
+
 ---
 
 ## 9. Fitur Global: Tema, Sync, Backup, Seekbar
@@ -617,12 +738,20 @@ di markup/JS UI.
 
 ### Backup gabungan
 File `berkah-DD-MM-YY.json`: `{app:'berkah-aio', version:1, exported, nota,
-pnl:{raw, days, arsip}, stok:{boss, mode:'worker'}}`. Export via Web Share
-(fallback unduh). Restore memakai jalur `applySyncPayload`; bagian stok butuh
-Mode Bos; dialog konfirmasi menampilkan perbandingan `lastAct` yang sama
-seperti sync. `pnl.days` (riwayat Analisis, lihat §7) di-upsert per tanggal
-sama seperti `pnl.arsip` — tanggal yang masuk menimpa tanggal yang sama,
-tanggal lain di riwayat lokal tidak tersentuh.
+pnl:{raw, days, arsip}, stok:{boss, mode:'worker', suppliers, pricelog}}`.
+Export via Web Share (fallback unduh). Restore memakai jalur
+`applySyncPayload`; bagian stok butuh Mode Bos; dialog konfirmasi menampilkan
+perbandingan `lastAct` yang sama seperti sync. `pnl.days` (riwayat Analisis,
+lihat §7) di-upsert per tanggal sama seperti `pnl.arsip` — tanggal yang masuk
+menimpa tanggal yang sama, tanggal lain di riwayat lokal tidak tersentuh.
+
+`stok.boss` (isi/hargaBeli/hargaJual per item HPP sudah ikut lewat spread
+`skState`) diganti UTUH saat restore (pola lama Stok, tidak berubah), tapi
+`stok.suppliers`/`stok.pricelog` (§8) **digabung (union)**, bukan ditimpa —
+riwayat harga append-only, sync/restore tidak boleh menghapus histori yang
+sudah ada di device ini. `skExportJSON`/`skImportJSON` ("Backup Stok" —
+cakupan modul ini saja, terpisah dari Backup Gabungan) ikut pola yang sama
+persis, supaya kedua jalur backup selalu konsisten lengkapnya.
 
 ⚠ **`collectSyncPayload`/`applySyncPayload`/`backupAll` di `part-08-sync.js`
 adalah file TERPISAH dari modul PNL** (`part-06-pnl.js`) — kalau field/fungsi
@@ -674,8 +803,8 @@ Palet chart terpisah dari token UI (lihat §7).
 node tests/match-test.js        # mesin pencocokan: 43/43 (ekstrak dari index.html)
 # smoke butuh playwright + chromium:
 npm i playwright                # (browser sudah ada? set CHROMIUM_PATH)
-CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 89/89
-CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 21/21
+CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 103/103
+CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 25/25
 ```
 
 Cakupan smoke: upload & persistensi CSV, parse 43 baris, dropdown+search+kamus
@@ -689,7 +818,10 @@ tampil otomatis setelah reload — regresi bug nyata**, laporan PDF Analisis
 (kontras kartu gelap tercetak benar + font PT Serif), arsip auto-isi + donut + legend +
 sorot + search + toggle jenis + laporan PDF Arsip (opsi sama, konten sesuai
 data Arsip), stok add/toggle/output-dua-arah/minus-freeze, gesture 5-tap + PIN +
-`mode:'worker'` di storage, seekbar collapse/tembus-klik/bangun, nav bawah,
+`mode:'worker'` di storage, **HPP (Pokok/Margin dua-arah + warna, bulk margin
+Rp/%, export .xlsx) + Supplier (sesi input harga → hargaBeli acuan, donut
+ringkasan, ranking termurah per barang, hapus entri) + backup ikut bawa
+suppliers/pricelog — semua boss-only**, seekbar collapse/tembus-klik/bangun, nav bawah,
 font ≥16px, tema, signature.
 
 **Definisi selesai untuk perubahan apapun:** ketiga test hijau + screenshot visual
@@ -723,6 +855,8 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | N4 | Dropdown produk tertutup sendiri saat mengetik di kotak cari ATAU scroll daftar produk | listener `scroll`/`resize` penutup dropdown (fix N3) tidak cek SUMBER event: scroll di dalam `#nk-cdfloat-res` (menggulir daftar) ikut dianggap "scroll halaman", dan `resize` dari keyboard HP muncul (saat kotak cari fokus) ikut dianggap "resize sungguhan" | scroll: abaikan kalau `e.target` ada di dalam `#nk-cdfloat`. resize: abaikan (reposisi saja, bukan tutup) kalau fokus sedang di dalam `#nk-cdfloat` — lihat §5 |
 | N5 | PNL: input hari baru MENGGANTI riwayat, bukan menambah; hasil Analisis (beda dari Arsip) hilang tiap reload | `pnAll = days` menimpa total riwayat dari isi kotak input saat itu saja — tidak pernah ditulis ke localStorage (beda dari Arsip yang sejak awal per-tanggal permanen) | riwayat per hari di-upsert ke `pnDays` (localStorage, per tanggal, sama pola dengan Arsip) — `pnAll` selalu materialisasi dari SEMUA tanggal tersimpan, bukan cuma batch terakhir. Mode Urutan Otomatis dihapus (tak cocok model upsert). Ditambah tombol hapus per tanggal (`pnDeleteDay`, lewat `pnApplyFilter()` supaya total/margin ikut recompute valid) — lihat §7 |
 | N6 | Tombol Backup Gabungan (⬇ Export) di Pengaturan "tidak berfungsi" — klik tanpa efek, tanpa error terlihat | Sisa referensi ke `PN_LS_MODE`/`PN_LS_START`/`pnSetMode`/`#pn-start-date` di `part-08-sync.js` (`backupAll`, `collectSyncPayload`, `applySyncPayload`) yang sudah dihapus dari modul PNL saat Mode Urutan Otomatis dibuang (fix N5) — `ReferenceError` di dalam `async function backupAll()` bikin Promise-nya reject tanpa `.catch()`, jadi crash-nya senyap total (unhandled rejection, tak ada toast/pesan). Bonus bug: payload backup/sync juga BELUM menyertakan `pnl.days` (riwayat Analisis akumulatif yang baru) — hanya draft teks + arsip yang ter-backup | hapus semua sisa referensi ke field yang sudah tidak ada; ganti payload PNL jadi `{raw, days: pnDays, arsip: pnArs}` di ketiga fungsi; `applySyncPayload` upsert `pnDays` per tanggal (pola sama dengan arsip) lalu `pnAll = pnMaterializeAll()` + render ulang |
+| N7 | Kolom Margin di tabel HPP tidak berwarna sama sekali (netral, padahal minus) | Class `pos`/`neg`/`warn` ditaruh di `<input class="cell-inp neg">`, tapi CSS `td.pos/.neg/.warn` (§10) cuma menyasar elemen `<td>` — lagipula `.cell-inp` sendiri sudah set `color` eksplisit jadi warna warisan pun kalah spesifisitas | tambah aturan spesifik `tbody td input.cell-inp.pos/.neg/.warn{color:...}` — pelajaran sama dengan bug G3: cek betul elemen APA yang dapat class, bukan cuma "class-nya sudah ada di suatu tempat" |
+| N8 | Overlay konfirmasi (`showConfirm`) tertimbun modal lain saat dipanggil dari dalam modal yang masih terbuka (hapus supplier dari modal edit-nya) — tombol Hapus/Batal tak terklik | Semua `.overlay` berbagi `z-index:1000`; tanpa diferensiasi, elemen yang lebih belakangan di DOM menang tampil di atas. Bug LATEN LAMA — pola identik ("Hapus" kategori dari modal edit kategori) sudah ada sejak awal proyek, tak pernah ketahuan karena tak pernah diuji | `#g-confirm-overlay{z-index:1100;}` — overlay konfirmasi SELALU di atas overlay lain apapun urutan DOM-nya |
 | P10 | Hasil Analisis PNL hilang tiap reload — user kira "tidak bisa disimpan, cuma read-only saat itu" | `pnAll`/`pnFiltered` cuma variabel in-memory; hanya `brk-pnl-raw` (teks mentah) yang persisten, tampilan tabel/kartu tidak ikut | `pnInit()` panggil `pnProcess(true)` (senyap) kalau ada raw tersimpan — reproses otomatis, lihat §7 |
 
 ### Checklist debug cepat
@@ -731,7 +865,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 3. `skSuppress` di-set sebelum menulis output programatik?
 4. Ada `const/let` dipakai sebelum deklarasi (IIFE awal)?
 5. Ada class CSS dipakai dua makna? (pelajaran G3)
-6. Test: 43/43, 89/89, 21/21 masih hijau?
+6. Test: 43/43, 103/103, 25/25 masih hijau?
 
 ---
 
@@ -771,8 +905,8 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 >    harga sampai 46× secara diam-diam dan salingnya menutupi di total. Mesin baru
 >    boleh bilang "tidak ketemu" — dan itu fitur, bukan kelemahan.
 >
-> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **89/89**
-> smoke desktop, **21/21** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
+> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **103/103**
+> smoke desktop, **25/25** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
 > turun, kembalikan dulu sebelum melangkah.
 >
 > — ✳ *Claude Fable 5 · Anthropic · Juli 2026*
