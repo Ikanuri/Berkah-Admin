@@ -206,6 +206,17 @@ tbody td input.cell-inp:focus{border-color:var(--accent);}
 tbody td input.cell-inp.pos{color:var(--green);}
 tbody td input.cell-inp.neg{color:var(--red);}
 tbody td input.cell-inp.warn{color:var(--amber);}
+/* Nama (kolom pertama) tetap terlihat saat scroll ke kanan — tabel HPP &
+   Supplier punya banyak kolom angka, tanpa ini nama barang hilang dari
+   pandangan begitu discroll ke kolom harga di sebelah kanan. */
+#hpp-table th:first-child, #hpp-table td:first-child,
+#sup-input-table th:first-child, #sup-input-table td:first-child{
+  position:sticky;left:0;z-index:1;background:var(--surface);
+  border-right:1px solid var(--border);
+}
+#hpp-table thead th:first-child, #sup-input-table thead th:first-child{
+  background:var(--surface2);
+}
 
 /* status strip & chip */
 td.strip{width:4px;padding:0;border-radius:3px 0 0 3px;}

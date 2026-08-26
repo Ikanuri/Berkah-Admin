@@ -704,6 +704,19 @@ export ini). CRC32 dihitung manual (wajib oleh spek ZIP walau method stored).
 independen) dengan isi & tipe sel benar — bukti file yang dihasilkan valid
 OOXML sungguhan, bukan CSV yang diganti nama ekstensi.
 
+#### Kolom Nama sticky saat scroll horizontal (`#hpp-table`, `#sup-input-table`)
+Kedua tabel ini punya banyak kolom angka (Isi/Harga Beli/Pokok/Harga
+Jual/Margin, atau Harga Sebelumnya/Harga Baru) sehingga di layar sempit harus
+discroll ke kanan — tanpa penanganan khusus, kolom **Nama** ikut hilang ke
+kiri layar dan pengguna kehilangan konteks baris mana yang sedang diedit.
+Fix: `th:first-child`/`td:first-child` pada kedua tabel diberi
+`position:sticky;left:0` + background solid eksplisit (`var(--surface)` body,
+`var(--surface2)` header — HARUS eksplisit, kalau tidak transparan dan kolom
+lain kelihatan menembus saat discroll) + `border-right` sebagai pembatas
+visual. Sengaja **tidak** diterapkan ke tabel lain (Nota, PNL, Arsip) karena
+kolom pertamanya beda semantik (mis. "TGL") dan tidak pernah dilaporkan
+bermasalah.
+
 ---
 
 ## 9. Fitur Global: Tema, Sync, Backup, Seekbar

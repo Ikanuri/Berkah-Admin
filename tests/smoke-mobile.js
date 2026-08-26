@@ -175,6 +175,17 @@ function check(name, cond, extra){
   await page.waitForTimeout(300);
   const hppVisibleM = await page.$eval('#sk-view-hpp', el => getComputedStyle(el).display !== 'none');
   check('Tab HPP terbuka & render di layar mobile', hppVisibleM);
+
+  const hppWrapM = await page.evaluateHandle(() => document.querySelector('#hpp-table').closest('.tbl-wrap'));
+  const nameLeftBeforeM = await page.$eval('#hpp-table tbody tr:first-child td:first-child', el => el.getBoundingClientRect().left);
+  await page.evaluate(el => { el.scrollLeft = el.scrollWidth; }, hppWrapM);
+  await page.waitForTimeout(150);
+  const nameLeftAfterM = await page.$eval('#hpp-table tbody tr:first-child td:first-child', el => el.getBoundingClientRect().left);
+  check('Kolom Nama HPP tetap terlihat (sticky) saat discroll ke kanan di mobile',
+    Math.abs(nameLeftAfterM - nameLeftBeforeM) < 1, 'sebelum='+nameLeftBeforeM.toFixed(1)+' sesudah='+nameLeftAfterM.toFixed(1));
+  await page.evaluate(el => { el.scrollLeft = 0; }, hppWrapM);
+  await page.waitForTimeout(150);
+
   await tapSafe('#sk-subnav [data-skview="supplier"]');
   await page.waitForTimeout(300);
   await tapSafe('#sup-subnav [data-supview="analisis"]');
