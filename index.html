@@ -6079,6 +6079,17 @@ function gSeekInit(){
 /* ═══════════════════════════════════════════════════════
    INIT GLOBAL — SATU-SATUNYA entry point (aturan wajib)
    ═══════════════════════════════════════════════════════ */
+// Jalankan init satu modul dengan pagar — exception di dalamnya tidak boleh
+// menjalar dan membatalkan init modul LAIN yang dipanggil sesudahnya di
+// initApp(). Gagal tetap terlihat (console.error + toast), bukan senyap
+// (pelajaran sama dengan bug N6: crash senyap = tak pernah ketahuan).
+function initModuleSafe(label, fn){
+  try { fn(); }
+  catch (e){
+    console.error('Gagal memuat modul "'+label+'":', e);
+    showToast('⚠ Modul '+label+' gagal dimuat — data mungkin korup. Cek Pengaturan → Backup, atau hubungi dukungan.');
+  }
+}
 function initApp(){
   applyTheme();
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -6189,10 +6200,15 @@ function initApp(){
   });
   $('g-brand').addEventListener('click', () => window.scrollTo({top:0, behavior:'smooth'}));
 
-  // modul
-  nkInit();
-  pnInit();
-  skInit();
+  // modul — masing-masing DIISOLASI. Dulu nkInit/pnInit/skInit dipanggil polos
+  // berurutan: kalau salah satu lempar exception (mis. data tersimpan yang
+  // korup/skema berubah), semua yang dipanggil SESUDAHNYA ikut tidak pernah
+  // jalan — satu modul rusak bisa mematikan modul lain yang sama sekali tak
+  // terkait (pernah terbukti: PNL error bikin skInit() tak terpanggil, gestur
+  // Mode Bos di Stok jadi mati total, tanpa pesan error apa pun ke user).
+  initModuleSafe('Nota Kulakan', nkInit);
+  initModuleSafe('PNL Analyzer', pnInit);
+  initModuleSafe('Stok Kosong', skInit);
 
   // buka modul terakhir yang dipakai
   switchModule(localStorage.getItem(LS_MOD) || 'nota');

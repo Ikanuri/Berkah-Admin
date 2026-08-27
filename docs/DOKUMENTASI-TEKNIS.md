@@ -766,12 +766,33 @@ di markup/JS UI.
   ```js
   { type:'berkah-sync', version:1, sent, modules:{
       nota:{db, dbmeta, learn, hist, counter},
-      pnl:{raw, mode, start, arsip},
-      stok:{boss}   // butuh Mode Bos di pengirim
+      pnl:{raw, days, arsip},
+      stok:{boss, suppliers, pricelog}   // butuh Mode Bos di pengirim
   }}
   ```
-  Pengirim memilih modul via checkbox. Penerima konfirmasi dulu, lalu
-  `applySyncPayload` (arsip di-merge per tanggal; stok disanitasi seperti import).
+  Pengirim memilih modul via checkbox — **granularitas per modul TOP-LEVEL
+  saja** (Nota / PNL / Stok Kosong). Tidak ada opsi "cuma HPP" atau "cuma
+  Supplier" terpisah dari Checklist: `isi`/`hargaBeli`/`hargaJual`/`satuanHpp`
+  nempel di objek item yang sama (§8), jadi otomatis ikut kapan pun modul
+  "Stok Kosong" dicentang — tak bisa dipisah dari Checklist-nya sendiri.
+  Penerima konfirmasi dulu, lalu `applySyncPayload`:
+  - `nota` — **ditimpa utuh** (DB/kamus/riwayat/counter).
+  - `pnl.days`/`pnl.arsip` — **merge per tanggal** (`Object.assign`), tanggal
+    lain di riwayat lokal tak tersentuh.
+  - `stok.boss` — **ditimpa utuh** (`skSanitizeImport`) termasuk field HPP di
+    tiap item, karena memang satu objek state yang sama dengan Checklist.
+  - `stok.suppliers`/`stok.pricelog` — **merge (union)**, bukan timpa (riwayat
+    harga append-only, sync tak pernah menghapus histori device penerima).
+
+  **Diverifikasi permanen lewat `tests/sync-test.js`**: dua/tiga "device"
+  (browser context Playwright terpisah, localStorage benar-benar terpisah) —
+  payload dari `collectSyncPayload()` di device pengirim di-pipe langsung ke
+  `applySyncPayload()` di device penerima (transport WebRTC di-skip karena
+  butuh internet sungguhan & dua peer sungguhan, tapi fungsi aslinya dipanggil
+  apa adanya, cuma transportnya diganti manual). 19/19 skenario lulus: full
+  sync (3 modul), partial sync (cuma Stok — Nota/PNL penerima terbukti sama
+  sekali tak tersentuh), guard "kirim Stok butuh Mode Bos", replace-vs-merge
+  semantics di atas.
 - **Kompatibilitas mundur**: payload `{type:'stok-sync', data}` dari app Stok
   Kosong lama tetap diterima.
 - **Perbandingan aktivitas Stok** (§8): dialog konfirmasi penerima menyisipkan
@@ -906,6 +927,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | N10 | Harga Jual **berubah sendiri** tanpa disentuh — mis. 4.550 → 4.551 | Kolom Margin ditampilkan dibulatkan (`Math.round(487,5)` = `488`), lalu nilai TAMPIL itu dipakai menghitung ulang Harga Jual (`pokok + 488`). Uji 56.000 kombinasi: **11,8% kasus bergeser, sampai Rp 9** (paling parah di mode %, karena persen ditampilkan 2 desimal saja) | Dua lapis: (a) margin ditampilkan apa adanya 2 desimal (`487,5`) dan `hppParseAngka(hppInpVal(x)) === x` diuji round-trip; (b) **struktural** — tiap input simpan `data-prev` berisi string persis yang dirender, `hppTableChange` langsung `return` kalau isinya tidak benar-benar berubah. Harga yang tersimpan tak boleh tersentuh kalau user tidak mengetik apa pun |
 | N11 | Supplier: setelah barang di-rename di Checklist, **riwayat harganya tak bisa dicari lagi** lewat nama sekarang — cuma lewat nama lama yang sudah tidak dipakai | `supAllItemNames()` (isi kotak pencarian di tab Analisis) dedup dari `pricelog` apa adanya (urutan lama→baru) dan mengambil snapshot `nama` PERTAMA yang ketemu untuk tiap itemId — snapshot itu memang sengaja dibekukan per-entri (§8, biar histori tetap valid kalau barang dihapus), tapi dipakai juga untuk pencarian, padahal barangnya MASIH ADA & sudah ganti nama | Kalau `hppFindItem(itemId)` masih menemukan itemnya, pakai nama LIVE-nya untuk pencarian & judul grafik; baru jatuh ke snapshot log **terbaru** (bukan tertua) sebagai fallback kalau barangnya sudah dihapus dari Checklist |
 | N12 | Supplier: harga desimal (mis. hasil nego pecahan per-kg) dibulatkan diam-diam di grafik & tabel riwayat banding harga (tab Analisis) | `supRenderItemChart` pakai `fmtRp()` (`Math.round`) alih-alih `hppFmtNum()` — inkonsisten dengan tabel Input Harga & tabel HPP yang sudah menampilkan presisi 2 desimal | Ganti ke `hppFmtNum()` di kedua tempat (bar grafik & tabel riwayat lengkap) |
+| N13 | Satu modul gagal init (mis. record PNL korup/tak lengkap) bikin modul LAIN yang sama sekali tak terkait ikut mati total — ditemukan tak sengaja saat menguji fitur sync: gestur 5-tap Mode Bos di Stok Kosong berhenti merespons, tanpa pesan error apa pun | `initApp()` memanggil `nkInit(); pnInit(); skInit();` polos berurutan tanpa try/catch. JS: exception yang tak tertangkap di tengah fungsi sinkron **menghentikan sisa fungsi itu** — jadi kalau `pnInit()` (dipanggil di tengah) melempar, baris `skInit()` sesudahnya TIDAK PERNAH dieksekusi sama sekali. Bukan bug aktif (data PNL normal selalu lengkap lewat `pnProcess`), tapi risiko laten: skema berubah di masa depan atau data korup bisa memicu ini | `initModuleSafe(label, fn)` — bungkus tiap panggilan modul (`nkInit`/`pnInit`/`skInit`) dengan try/catch sendiri-sendiri. Satu gagal → `console.error` + toast peringatan (`⚠ Modul X gagal dimuat`, pola sama dengan pelajaran N6: jangan pernah gagal senyap), modul LAIN tetap lanjut init normal. Diuji lewat `tests/init-isolation-test.js` |
 | N8 | Overlay konfirmasi (`showConfirm`) tertimbun modal lain saat dipanggil dari dalam modal yang masih terbuka (hapus supplier dari modal edit-nya) — tombol Hapus/Batal tak terklik | Semua `.overlay` berbagi `z-index:1000`; tanpa diferensiasi, elemen yang lebih belakangan di DOM menang tampil di atas. Bug LATEN LAMA — pola identik ("Hapus" kategori dari modal edit kategori) sudah ada sejak awal proyek, tak pernah ketahuan karena tak pernah diuji | `#g-confirm-overlay{z-index:1100;}` — overlay konfirmasi SELALU di atas overlay lain apapun urutan DOM-nya |
 | P10 | Hasil Analisis PNL hilang tiap reload — user kira "tidak bisa disimpan, cuma read-only saat itu" | `pnAll`/`pnFiltered` cuma variabel in-memory; hanya `brk-pnl-raw` (teks mentah) yang persisten, tampilan tabel/kartu tidak ikut | `pnInit()` panggil `pnProcess(true)` (senyap) kalau ada raw tersimpan — reproses otomatis, lihat §7 |
 

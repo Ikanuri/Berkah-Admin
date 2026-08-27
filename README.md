@@ -48,6 +48,12 @@ node tests/match-test.js
 # uji aritmatika uang HPP — parser desimal, pembulatan, round-trip
 node tests/hpp-math-test.js
 
+# uji isolasi init — satu modul gagal tidak boleh mematikan modul lain
+node tests/init-isolation-test.js
+
+# uji fitur sync (full + partial, termasuk HPP) — dua/tiga "device" simulasi
+node tests/sync-test.js
+
 # smoke test end-to-end (butuh playwright + chromium)
 node tests/smoke.js
 node tests/smoke-mobile.js
