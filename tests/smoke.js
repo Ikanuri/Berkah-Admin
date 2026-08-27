@@ -469,6 +469,41 @@ function check(name, cond, extra){
   const donutSlices = await page.$$('#sup-donut [data-sup]');
   check('Supplier: donut ringkasan ter-render', donutSlices.length >= 1, donutSlices.length + ' slice');
 
+  // regresi: rename item di Checklist dulu tak bikin riwayat harganya "hilang"
+  // dari pencarian Analisis — supAllItemNames dulu dedup dari snapshot log
+  // PALING LAMA, jadi dicari pakai nama SEKARANG tidak ketemu sama sekali
+  await page.click('#sk-subnav [data-skview="checklist"]');
+  await page.waitForTimeout(250);
+  await page.dblclick('.item-name');
+  await page.waitForTimeout(150);
+  await page.fill('.item-name-input', 'Gula Pasir Baru');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  await page.click('#sk-subnav [data-skview="supplier"]');
+  await page.waitForTimeout(200);
+  await page.click('#sup-subnav [data-supview="analisis"]');
+  await page.waitForTimeout(300);
+  await page.fill('#sup-item-search', 'Baru');
+  await page.waitForTimeout(200);
+  const foundByNewName = await page.$('#sup-item-picks [data-pickitem]');
+  check('Supplier: riwayat harga tetap ketemu lewat NAMA BARU setelah rename', !!foundByNewName);
+  if (foundByNewName) await foundByNewName.click();
+  await page.waitForTimeout(300);
+
+  // regresi: grafik/tabel banding harga Supplier dulu pakai fmtRp (membulatkan
+  // ke rupiah bulat) alih-alih hppFmtNum — harga desimal senyap dibulatkan
+  await page.click('#sup-subnav [data-supview="input"]');
+  await page.waitForTimeout(200);
+  await page.$eval('#sup-input-table tbody tr:first-child .sup-price-inp', el => { el.value = '4.062,5'; el.dispatchEvent(new Event('input', {bubbles:true})); });
+  await page.click('#sup-save-btn');
+  await page.waitForTimeout(200);
+  await page.click('#g-confirm-ok');
+  await page.waitForTimeout(300);
+  await page.click('#sup-subnav [data-supview="analisis"]');
+  await page.waitForTimeout(300);
+  const supHbarVal = await page.$eval('.hbar-val', el => el.textContent.trim());
+  check('Supplier: harga desimal TIDAK dibulatkan diam-diam di grafik banding (4.062,5)', supHbarVal === '4.062,5', supHbarVal);
+
   // ── BACKUP GABUNGAN ikut bawa data HPP/Supplier ──
   const [backupDlHpp] = await Promise.all([
     page.waitForEvent('download'),
