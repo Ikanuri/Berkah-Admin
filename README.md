@@ -45,8 +45,12 @@ Kolom `satuan` sudah berupa label teks langsung (`Slop`, `Pak`, `Biji`, …) —
 # uji mesin pencocokan (43 kasus, diekstrak langsung dari index.html)
 node tests/match-test.js
 
+# uji aritmatika uang HPP — parser desimal, pembulatan, round-trip
+node tests/hpp-math-test.js
+
 # smoke test end-to-end (butuh playwright + chromium)
 node tests/smoke.js
+node tests/smoke-mobile.js
 ```
 
 ## Struktur

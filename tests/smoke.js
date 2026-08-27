@@ -395,6 +395,47 @@ function check(name, cond, extra){
   const jualBulk = await page.$eval('#hpp-table tbody tr:first-child [data-f="hargaJual"]', el => el.value);
   check('HPP: bulk margin per-kategori menimpa Harga Jual (4250+300=4550)', jualBulk === '4550', jualBulk);
 
+  // ── HPP: uang & desimal (regresi bug parser lama yang membuang koma) ──
+  const hppCell = f => page.$eval('#hpp-table tbody tr:first-child [data-f="'+f+'"]', el => el.value);
+  await setHppCell('first-child', 'hargaBeli', '65000');      // 65000/16 = 4062,5 (pecahan)
+  const pokokPecah = await page.$eval('#hpp-table tbody tr:first-child td:nth-child(5)', el => el.textContent.trim());
+  check('HPP: pokok pecahan tidak dibulatkan diam-diam (65000÷16)', pokokPecah === '4.062,5', pokokPecah);
+  await setHppCell('first-child', 'hargaJual', '4550');
+  check('HPP: margin tampil 487,5 (bukan dibulatkan jadi 488)', await hppCell('margin') === '487,5', await hppCell('margin'));
+  await setHppCell('first-child', 'margin', '487,5');
+  check('HPP: round-trip margin tidak menggeser Harga Jual', await hppCell('hargaJual') === '4550', await hppCell('hargaJual'));
+  await setHppCell('first-child', 'margin', '0,5');
+  check('HPP: margin desimal <1 valid (0,5 → 4063, dulu dibaca 5)', await hppCell('hargaJual') === '4063', await hppCell('hargaJual'));
+
+  // toggle kolom Margin: Rupiah ⇄ persen dari modal
+  await setHppCell('first-child', 'hargaJual', '4550');
+  await page.click('#hpp-margin-mode');
+  await page.waitForTimeout(200);
+  check('HPP: toggle kolom Margin ke % berfungsi', await hppCell('margin') === '12', await hppCell('margin'));
+  await setHppCell('first-child', 'margin', '12,5');
+  check('HPP: margin 12,5% dihitung 12,5% (dulu jadi 125%)', await hppCell('hargaJual') === '4570', await hppCell('hargaJual'));
+  await page.click('#hpp-margin-mode');
+  await page.waitForTimeout(200);
+  check('HPP: toggle balik ke Rupiah', await hppCell('margin') === '507,5', await hppCell('margin'));
+
+  // satuan HPP diinput manual & TERPISAH dari satuan Checklist
+  await page.click('#hpp-table tbody tr:first-child .hpp-unit-btn');
+  await page.waitForTimeout(200);
+  check('HPP: popup satuan terbuka (daftar sama dgn Checklist)',
+    await page.$$eval('.hpp-unit-pop .unit-opt', els => els.length) === 13);
+  await page.click('.hpp-unit-pop .unit-opt:nth-child(4)');
+  await page.waitForTimeout(250);
+  const unitSplit = await page.evaluate(() => {
+    const d = JSON.parse(localStorage.getItem('stok-boss-data'));
+    const it = d.items[Object.keys(d.items)[0]][0];
+    return it.unit + '/' + it.satuanHpp;
+  });
+  check('HPP: satuan manual tidak menimpa satuan Checklist', unitSplit === 'dus/kg', unitSplit);
+
+  // nilai margin massal bertahan (dulu cuma hidup di DOM, hilang tiap reload)
+  const bulkPersist = await page.evaluate(() => JSON.parse(localStorage.getItem('stok-hpp-ui')||'{}'));
+  check('HPP: nilai margin massal tersimpan ke localStorage', bulkPersist.bulkVal === '300', JSON.stringify(bulkPersist));
+
   const [hppDl] = await Promise.all([
     page.waitForEvent('download'),
     page.click('#hpp-export-btn'),

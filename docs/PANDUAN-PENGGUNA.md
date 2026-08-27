@@ -206,6 +206,11 @@ sama persis dengan Checklist, jadi tidak perlu input ulang. **Karyawan tidak
 pernah melihat tab ini** — harga modal itu data sensitif.
 
 Untuk tiap barang, isi:
+- **Satuan** — ketuk tombolnya, pilih dari daftar (dus, slp, kg, …). Sama persis
+  seperti memilih satuan di Checklist. Sengaja **diisi sendiri di sini**: yang
+  ikut otomatis dari Checklist cuma *nama barang*, karena satuan waktu order
+  belum tentu satuan yang Anda pakai menghitung modal. Mengubahnya di sini
+  **tidak** mengubah satuan di Checklist, begitu juga sebaliknya.
 - **Isi** — berapa satuan eceran dalam satu satuan beli (mis. 1 dus isi 16 pcs).
 - **Harga Beli** — harga per satuan beli (per dus/pak/dst).
 - **Harga Pokok/Ecer** terisi otomatis (Harga Beli ÷ Isi) — tidak perlu dihitung manual.
@@ -214,14 +219,25 @@ Untuk tiap barang, isi:
   atau merah (rugi). Bisa juga **diketik langsung**: isi Margin yang diinginkan
   → Harga Jual otomatis menyesuaikan (Harga Pokok + Margin).
 
+**Angka desimal boleh**, pakai koma seperti biasa: `0,5` · `12,5` · `1.500,75`.
+Titik dibaca sebagai pemisah ribuan (`2.500` = dua ribu lima ratus).
+
+**Margin bisa ditampilkan dalam Rupiah atau persen** — ketuk tombol kecil
+**`Rp ⇄`** di judul kolom Margin untuk berganti. Dalam mode **%**, angka yang
+Anda ketik dihitung sebagai persen **dari modal** (pokok 10.000 + 12,5% =
+11.250). Pilihan ini diingat.
+
 **Terapkan Margin Massal** — untuk atur margin banyak barang sekaligus (mis.
 semua camilan Rp 250 di atas modal): isi angka, pilih **Rp** (nominal tetap)
 atau **%** (persen dari harga pokok), lalu **Terapkan ke kategori ini** atau
 **Terapkan ke SEMUA kategori**. Ini **menimpa** Harga Jual yang sudah ada —
-barang yang Isi/Harga Belinya belum diisi otomatis dilewati.
+barang yang Isi/Harga Belinya belum diisi otomatis dilewati. Angka yang Anda
+ketik di kotak itu **tersimpan** — tidak hilang walau tab ditutup atau HP
+di-restart, jadi tidak perlu mengetik ulang tiap kali.
 
 Tombol **⬇ Excel** mengunduh seluruh daftar HPP sebagai file `.xlsx` asli
-(bisa dibuka langsung di Excel/Google Sheets/WPS).
+(bisa dibuka langsung di Excel/Google Sheets/WPS) — lengkap dengan kolom
+Margin dalam Rupiah **dan** dalam persen.
 
 ### 🚚 Supplier — banding harga & lacak termurah (khusus Mode Bos)
 Ketuk tab **🚚 Supplier**. Ada dua bagian:

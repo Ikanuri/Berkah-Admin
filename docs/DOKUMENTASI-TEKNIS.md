@@ -136,7 +136,8 @@ Setiap aturan lahir dari bug nyata (lihat §12):
 | `stok-oor` | Stok | tampilan item di luar filter: `'dim' \| 'hide'` |
 | `stok-output-ts` | Stok | header tanggal di output: `'show' \| 'hide'` |
 | `stok-hpp-suppliers` | Stok (HPP) | `string[]` — daftar nama supplier |
-| `stok-hpp-pricelog` | Stok (HPP) | `[{id, ts, tanggal, supplier, itemId, nama, unit, hargaBeli}]` — riwayat harga, append-only. `isi`/`hargaBeli`/`hargaJual` HPP itu sendiri **bukan** key terpisah — nempel di item `stok-boss-data` (lihat §8) |
+| `stok-hpp-pricelog` | Stok (HPP) | `[{id, ts, tanggal, supplier, itemId, nama, unit, hargaBeli}]` — riwayat harga, append-only. `isi`/`hargaBeli`/`hargaJual`/`satuanHpp` HPP itu sendiri **bukan** key terpisah — nempel di item `stok-boss-data` (lihat §8) |
+| `stok-hpp-ui` | Stok (HPP) | `{bulkVal, bulkMode:'rp'\|'pct', marginMode:'rp'\|'pct'}` — preferensi tampilan HPP. Dulu cuma hidup di DOM sehingga nilai margin massal lenyap tiap reload/keluar Mode Bos. Preferensi device-lokal → sengaja TIDAK ikut backup/sync (sama seperti tema) |
 
 Total pemakaian tipikal (DB 2.774 produk + arsip setahun) ±600 KB — jauh di bawah kuota ±5 MB.
 
@@ -704,6 +705,38 @@ export ini). CRC32 dihitung manual (wajib oleh spek ZIP walau method stored).
 independen) dengan isi & tipe sel benar — bukti file yang dihasilkan valid
 OOXML sungguhan, bukan CSV yang diganti nama ekstensi.
 
+#### Aturan uang di HPP (baca sebelum menyentuh angka apa pun di sini)
+1. **Satu-satunya pintu masuk angka adalah `hppParseAngka`.** Jangan pernah
+   `parseInt`/`parseFloat` mentah atas input user — itu sumber bug N9.
+2. **Setiap penulisan nilai uang lewat `hppRound()`.** Float biner tidak bisa
+   menyimpan `0,1` dengan tepat; tanpa pembulatan eksplisit galatnya menumpuk.
+3. **`Harga Jual` selalu rupiah bulat** (`Math.round`) — itu angka yang benar-benar
+   dipakai di kasir. `Pokok` & `Margin` boleh pecahan (nilai turunan, bukan
+   yang ditagihkan).
+4. **Persen SELALU markup atas modal**: `margin ÷ pokok × 100` (`hppPctOf`).
+   Dipakai konsisten di kolom Margin mode `%`, margin massal mode `%`, dan
+   kolom "Margin (% dari modal)" di export — supaya satu istilah = satu arti.
+5. **Jangan hitung ulang dari angka yang DITAMPILKAN.** Tampilan dibulatkan;
+   sumber kebenaran adalah nilai tersimpan. Ini inti fix N10 (`data-prev`).
+6. **Pembagian selalu dijaga**: `hppCost` hanya membagi kalau `isi > 0 &&
+   hargaBeli > 0`, jadi tidak pernah `Infinity`/`NaN` bocor ke harga.
+7. Harga Jual hasil hitungan yang jatuh ke `≤ 0` **ditolak**, baik per-baris
+   maupun massal (di massal barisnya dilewati & dilaporkan di toast).
+
+Dijaga permanen oleh `tests/hpp-math-test.js` (fungsi diekstrak langsung dari
+`index.html` hasil build, bukan disalin — jadi yang diuji benar-benar kode yang
+dikirim) plus blok regresi HPP di `tests/smoke.js`.
+
+#### Satuan HPP terpisah dari satuan Checklist (`satuanHpp`)
+Yang diwarisi dari Checklist hanya **nama barang**. Satuan di tabel HPP diisi
+manual lewat popup yang daftarnya sama persis dengan popup satuan Checklist
+(`SK_UNITS`), tapi menulis ke field sendiri `item.satuanHpp` — `item.unit`
+(satuan order di Checklist) tidak pernah tertimpa, dan sebaliknya. Alasannya
+satuan kulakan untuk order belum tentu satuan yang dipakai menghitung modal.
+Popup-nya dirender `position:fixed` ke `<body>` (`hppOpenUnitPop`) karena
+`.tbl-wrap{overflow-x:auto}` akan memotong popup absolut — pelajaran yang sama
+dengan bug N3 di dropdown Nota.
+
 #### Kolom Nama sticky saat scroll horizontal (`#hpp-table`, `#sup-input-table`)
 Kedua tabel ini punya banyak kolom angka (Isi/Harga Beli/Pokok/Harga
 Jual/Margin, atau Harga Sebelumnya/Harga Baru) sehingga di layar sempit harus
@@ -869,6 +902,8 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | N5 | PNL: input hari baru MENGGANTI riwayat, bukan menambah; hasil Analisis (beda dari Arsip) hilang tiap reload | `pnAll = days` menimpa total riwayat dari isi kotak input saat itu saja — tidak pernah ditulis ke localStorage (beda dari Arsip yang sejak awal per-tanggal permanen) | riwayat per hari di-upsert ke `pnDays` (localStorage, per tanggal, sama pola dengan Arsip) — `pnAll` selalu materialisasi dari SEMUA tanggal tersimpan, bukan cuma batch terakhir. Mode Urutan Otomatis dihapus (tak cocok model upsert). Ditambah tombol hapus per tanggal (`pnDeleteDay`, lewat `pnApplyFilter()` supaya total/margin ikut recompute valid) — lihat §7 |
 | N6 | Tombol Backup Gabungan (⬇ Export) di Pengaturan "tidak berfungsi" — klik tanpa efek, tanpa error terlihat | Sisa referensi ke `PN_LS_MODE`/`PN_LS_START`/`pnSetMode`/`#pn-start-date` di `part-08-sync.js` (`backupAll`, `collectSyncPayload`, `applySyncPayload`) yang sudah dihapus dari modul PNL saat Mode Urutan Otomatis dibuang (fix N5) — `ReferenceError` di dalam `async function backupAll()` bikin Promise-nya reject tanpa `.catch()`, jadi crash-nya senyap total (unhandled rejection, tak ada toast/pesan). Bonus bug: payload backup/sync juga BELUM menyertakan `pnl.days` (riwayat Analisis akumulatif yang baru) — hanya draft teks + arsip yang ter-backup | hapus semua sisa referensi ke field yang sudah tidak ada; ganti payload PNL jadi `{raw, days: pnDays, arsip: pnArs}` di ketiga fungsi; `applySyncPayload` upsert `pnDays` per tanggal (pola sama dengan arsip) lalu `pnAll = pnMaterializeAll()` + render ulang |
 | N7 | Kolom Margin di tabel HPP tidak berwarna sama sekali (netral, padahal minus) | Class `pos`/`neg`/`warn` ditaruh di `<input class="cell-inp neg">`, tapi CSS `td.pos/.neg/.warn` (§10) cuma menyasar elemen `<td>` — lagipula `.cell-inp` sendiri sudah set `color` eksplisit jadi warna warisan pun kalah spesifisitas | tambah aturan spesifik `tbody td input.cell-inp.pos/.neg/.warn{color:...}` — pelajaran sama dengan bug G3: cek betul elemen APA yang dapat class, bukan cuma "class-nya sudah ada di suatu tempat" |
+| N9 | **Semua angka desimal di HPP salah 10×–100×.** Margin `12,5%` diterapkan sebagai **125%**; margin `0,5` dibaca `5`; `1.500,75` jadi `150075`; Isi `1,5` jadi `15` | `hppParseAngka` membuang SEMUA titik & koma lalu `parseInt` — `.`/`,` diperlakukan cuma sebagai pemisah ribuan, jadi desimal mustahil. `isi` malah pakai `parseInt(replace(/[^\d]/g,''))` sendiri. Terbukti lewat `tests/hpp-math-test.js` | Parser baru sadar konteks: ada koma → koma = desimal & titik = ribuan; hanya titik → ribuan **hanya kalau** polanya persis `\d{1,3}(\.\d{3})+`, selain itu desimal. Semua penulisan uang lewat `hppRound()` (nudge 1e-9, menutup galat biner spt `0,1+0,2` dan `1,005`). Lihat §8 |
+| N10 | Harga Jual **berubah sendiri** tanpa disentuh — mis. 4.550 → 4.551 | Kolom Margin ditampilkan dibulatkan (`Math.round(487,5)` = `488`), lalu nilai TAMPIL itu dipakai menghitung ulang Harga Jual (`pokok + 488`). Uji 56.000 kombinasi: **11,8% kasus bergeser, sampai Rp 9** (paling parah di mode %, karena persen ditampilkan 2 desimal saja) | Dua lapis: (a) margin ditampilkan apa adanya 2 desimal (`487,5`) dan `hppParseAngka(hppInpVal(x)) === x` diuji round-trip; (b) **struktural** — tiap input simpan `data-prev` berisi string persis yang dirender, `hppTableChange` langsung `return` kalau isinya tidak benar-benar berubah. Harga yang tersimpan tak boleh tersentuh kalau user tidak mengetik apa pun |
 | N8 | Overlay konfirmasi (`showConfirm`) tertimbun modal lain saat dipanggil dari dalam modal yang masih terbuka (hapus supplier dari modal edit-nya) — tombol Hapus/Batal tak terklik | Semua `.overlay` berbagi `z-index:1000`; tanpa diferensiasi, elemen yang lebih belakangan di DOM menang tampil di atas. Bug LATEN LAMA — pola identik ("Hapus" kategori dari modal edit kategori) sudah ada sejak awal proyek, tak pernah ketahuan karena tak pernah diuji | `#g-confirm-overlay{z-index:1100;}` — overlay konfirmasi SELALU di atas overlay lain apapun urutan DOM-nya |
 | P10 | Hasil Analisis PNL hilang tiap reload — user kira "tidak bisa disimpan, cuma read-only saat itu" | `pnAll`/`pnFiltered` cuma variabel in-memory; hanya `brk-pnl-raw` (teks mentah) yang persisten, tampilan tabel/kartu tidak ikut | `pnInit()` panggil `pnProcess(true)` (senyap) kalau ada raw tersimpan — reproses otomatis, lihat §7 |
 
