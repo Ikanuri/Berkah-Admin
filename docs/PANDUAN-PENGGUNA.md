@@ -239,6 +239,10 @@ Tombol **⬇ Excel** mengunduh seluruh daftar HPP sebagai file `.xlsx` asli
 (bisa dibuka langsung di Excel/Google Sheets/WPS) — lengkap dengan kolom
 Margin dalam Rupiah **dan** dalam persen.
 
+> 💡 Tabelnya lebar (banyak kolom angka) — di layar sempit, kolom **Nama**
+> tetap menempel di kiri walau Anda scroll ke kanan lihat harga, jadi tidak
+> perlu scroll bolak-balik untuk tahu barang mana yang sedang dilihat.
+
 ### 🚚 Supplier — banding harga & lacak termurah (khusus Mode Bos)
 Ketuk tab **🚚 Supplier**. Ada dua bagian:
 
@@ -254,7 +258,9 @@ tercatat dari tiap supplier (bisa difilter rentang tanggal). Di bawahnya, cari
 nama barang untuk **membandingkan harga terbaru tiap supplier** — diurutkan
 termurah dulu, supplier termurah ditandai 🏆 hijau. Tabel riwayat lengkap di
 bawahnya bisa dihapus per baris kalau ada salah input (Harga Beli barang
-otomatis kembali ke entri tersisa yang paling baru).
+otomatis kembali ke entri tersisa yang paling baru). Kalau barangnya
+kemudian di-rename di Checklist, pencarian di sini tetap ketemu pakai nama
+yang **sekarang** — tidak perlu ingat nama lamanya.
 
 ---
 
@@ -263,8 +269,24 @@ otomatis kembali ke entri tersisa yang paling baru).
 | Fitur | Keterangan |
 |---|---|
 | **Tema** | Terang / Gelap / ikut Sistem — tombol ◐ untuk toggle cepat |
-| **📡 Kirim / 📥 Terima** | Pindahkan data antar HP tanpa file: pengirim pilih modul → dapat kode 6 huruf + QR → penerima masukkan kode. Butuh internet sebentar untuk "berjabat tangan", data mengalir langsung antar device. Kirim data Stok butuh Mode Bos. Sebelum kirim, centang Stok menunjukkan aktivitas terakhir HP ini. |
-| **⬇ Export / ⬆ Restore** | **Backup gabungan** satu file JSON berisi SEMUA (database, kamus, riwayat, PNL+arsip, stok). Lakukan rutin! Restore bagian stok butuh Mode Bos. |
+| **📡 Kirim / 📥 Terima** | Pindahkan data antar HP tanpa file: pengirim pilih modul → dapat kode 6 huruf + QR → penerima masukkan kode. Butuh internet sebentar untuk "berjabat tangan", data mengalir langsung antar device. Kirim data Stok butuh Mode Bos. Sebelum kirim, centang Stok menunjukkan aktivitas terakhir HP ini. Anda pilih modul mana yang dikirim (Nota / PNL / Stok Kosong) — bisa kirim semua sekaligus atau cuma satu; HPP & Supplier selalu ikut kapan pun "Stok Kosong" dicentang (satu paket dengan Checklist, tidak bisa dipisah). |
+| **⬇ Export / ⬆ Restore** | **Backup gabungan** satu file JSON berisi SEMUA (database, kamus, riwayat, PNL+arsip, stok+HPP+supplier). Lakukan rutin! Restore bagian stok butuh Mode Bos. |
+
+> 🔀 **Apa yang DITIMPA vs yang DIGABUNG saat menerima data?** Supaya tidak
+> kaget:
+> - **Nota** (database produk, kamus, riwayat nota) dan **Checklist+HPP**
+>   (daftar barang, harga pokok/jual) — **DITIMPA** oleh data yang diterima.
+>   Ini karena keduanya adalah "potret keadaan sekarang" — kalau dua HP
+>   sudah beda-beda isinya, salah satu harus menang, tidak bisa digabung
+>   asal-asalan (nanti barangnya dobel/rusak).
+> - **Riwayat PNL** (Harian/Arsip) dan **riwayat harga Supplier** —
+>   **DIGABUNG**, tidak pernah ditimpa. Tanggal atau catatan harga yang
+>   sudah ada di HP Anda tetap aman biarpun HP lain belum punya data itu,
+>   karena tiap catatan adalah transaksi yang benar-benar sudah terjadi —
+>   kalau ditimpa, catatan itu hilang selamanya dan tak bisa dibuat ulang.
+>
+> Ringkasnya: yang "sekarang begini" boleh ditimpa, yang "pernah terjadi"
+> tidak pernah dihapus oleh sync/restore.
 
 > 🔍 **Bingung HP mana yang lebih baru?** Saat menerima data Stok (via Kirim/Terima
 > maupun Restore), aplikasi menampilkan perbandingan sebelum menimpa apapun:
@@ -308,6 +330,12 @@ dari file lokal browser hanya bisa mengunduh PNG-nya — kirim manual dari galer
 
 **Ganti HP** — Cara termudah: Pengaturan → Export backup gabungan di HP lama →
 kirim file JSON + `index.html` ke HP baru → Restore. Atau pakai 📡 Kirim/Terima.
+
+**Muncul peringatan "Modul X gagal dimuat"** — Salah satu bagian datanya
+kemungkinan korup/tidak lengkap (mis. gara-gara sinkron dari versi lama atau
+penyimpanan HP bermasalah). Modul lain tetap jalan normal — hanya modul yang
+disebutkan yang perlu dicek. Coba restore dari backup JSON terakhir yang
+masih bagus, atau hubungi dukungan kalau berlanjut.
 
 ---
 

@@ -70,6 +70,9 @@ via CDN (lazy-load hanya saat fitur sync dibuka; gagal muat → toast, fitur lai
 <script> blok 4: PNL      — modul pn* + arsip ars*
 <script> blok 5: STOK     — modul sk*
 <script> blok 6: SYNC+INIT— sync WebRTC, backup gabungan, seekbar, initApp()
+                            (initApp() memanggil tiap modul lewat
+                            initModuleSafe() — satu modul gagal init TAK
+                            BOLEH mematikan modul lain, lihat fix N13 §12)
 ```
 
 **Marker `/*ENGINE-START*/ … /*ENGINE-END*/` adalah kontrak dengan test suite** —
@@ -80,7 +83,8 @@ Repo:
 ```
 index.html          aplikasi final (satu-satunya file yang dipakai user)
 data/Products.csv   data produk toko (skema rujukan, 2.774 baris) — fixture test
-tests/              match-test.js · smoke.js · smoke-mobile.js · template.txt
+tests/              match-test.js · hpp-math-test.js · init-isolation-test.js ·
+                    sync-test.js · smoke.js · smoke-mobile.js · template.txt
 docs/               dokumen ini + PANDUAN-PENGGUNA.md
 ```
 
@@ -109,6 +113,13 @@ Setiap aturan lahir dari bug nyata (lihat §12):
 9. **String besar (laporan PDF) tidak pernah template-literal ber-backtick nested** —
    laporan dibangun dengan concatenation + `fungsi.toString()` + dibuka via **Blob URL**.
 10. **Satuan item Nota selalu milik input user** — DB tidak pernah menimpanya.
+11. **Semua angka uang lewat `hppParseAngka`/`hppRound`** — tidak pernah `parseInt`/
+    `parseFloat` mentah atas input user, dan tidak pernah menghitung ulang dari nilai
+    yang DITAMPILKAN (dibulatkan). Pelajaran dari bug N9/N10 (§12) — margin 12,5%
+    pernah diterapkan sebagai 125%.
+12. **Tiap modul di `initApp()` dipanggil lewat `initModuleSafe()`**, tidak pernah
+    dipanggil polos. Satu modul gagal init tidak boleh mematikan modul lain yang
+    tak terkait — pelajaran dari bug N13 (§12).
 
 ---
 
@@ -784,6 +795,21 @@ di markup/JS UI.
   - `stok.suppliers`/`stok.pricelog` — **merge (union)**, bukan timpa (riwayat
     harga append-only, sync tak pernah menghapus histori device penerima).
 
+  **Kenapa tidak konsisten timpa-semua atau merge-semua?** Pertanyaannya bukan
+  "modul apa" tapi **"data ini snapshot-state atau ledger-riwayat?"**
+  - **Snapshot-state** (Nota DB, `stok.boss`) = satu potret "begini keadaannya
+    SEKARANG", dan dua potret dari dua device benar-benar BISA BERTABRAKAN
+    (barang sama sudah di-rename beda, kategori sudah diubah, harga produk
+    sudah update) — tak ada cara menggabung dua versi state yang bertentangan
+    tanpa hasil yang aneh/rusak, jadi salah satu HARUS menang: seluruhnya.
+  - **Ledger-riwayat** (`pnl.days`/`arsip`, `stok.pricelog`) = tiap entri
+    adalah FAKTA independen yang sudah terjadi di tanggal/waktu tertentu, dan
+    tidak pernah diedit setelah dicatat, cuma ditambah (atau dihapus manual).
+    Entri-entri ini TIDAK bertentangan satu sama lain (tanggal 5 Agustus tidak
+    bersaing dengan tanggal 6 Agustus), jadi aman digabung — sedangkan
+    menimpa-utuh berarti MEMUSNAHKAN transaksi nyata yang sudah tercatat di
+    device penerima dan tak mungkin direkonstruksi ulang.
+
   **Diverifikasi permanen lewat `tests/sync-test.js`**: dua/tiga "device"
   (browser context Playwright terpisah, localStorage benar-benar terpisah) —
   payload dari `collectSyncPayload()` di device pengirim di-pipe langsung ke
@@ -868,10 +894,13 @@ Palet chart terpisah dari token UI (lihat §7).
 
 ```bash
 node tests/match-test.js        # mesin pencocokan: 43/43 (ekstrak dari index.html)
-# smoke butuh playwright + chromium:
+node tests/hpp-math-test.js     # aritmatika uang HPP: parser/pembulatan/round-trip
+# smoke & test lain butuh playwright + chromium:
 npm i playwright                # (browser sudah ada? set CHROMIUM_PATH)
-CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 103/103
-CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 25/25
+CHROMIUM_PATH=/path/to/chromium node tests/init-isolation-test.js  # isolasi init: 5/5
+CHROMIUM_PATH=/path/to/chromium node tests/sync-test.js            # sync full+partial: 19/19
+CHROMIUM_PATH=/path/to/chromium node tests/smoke.js         # desktop 115/115
+CHROMIUM_PATH=/path/to/chromium node tests/smoke-mobile.js  # mobile 26/26
 ```
 
 Cakupan smoke: upload & persistensi CSV, parse 43 baris, dropdown+search+kamus
@@ -885,14 +914,24 @@ tampil otomatis setelah reload — regresi bug nyata**, laporan PDF Analisis
 (kontras kartu gelap tercetak benar + font PT Serif), arsip auto-isi + donut + legend +
 sorot + search + toggle jenis + laporan PDF Arsip (opsi sama, konten sesuai
 data Arsip), stok add/toggle/output-dua-arah/minus-freeze, gesture 5-tap + PIN +
-`mode:'worker'` di storage, **HPP (Pokok/Margin dua-arah + warna, bulk margin
-Rp/%, export .xlsx) + Supplier (sesi input harga → hargaBeli acuan, donut
-ringkasan, ranking termurah per barang, hapus entri) + backup ikut bawa
-suppliers/pricelog — semua boss-only**, seekbar collapse/tembus-klik/bangun, nav bawah,
-font ≥16px, tema, signature.
+`mode:'worker'` di storage, **HPP (Pokok/Margin dua-arah + warna, toggle Margin
+Rp/%, bulk margin Rp/% dengan state persisten, satuan manual terpisah dari
+Checklist, kolom Nama sticky saat scroll, aritmatika desimal presisi, export
+.xlsx) + Supplier (sesi input harga → hargaBeli acuan, donut ringkasan,
+ranking termurah per barang, pencarian ikut nama LIVE setelah rename, hapus
+entri) + backup ikut bawa suppliers/pricelog — semua boss-only**, seekbar
+collapse/tembus-klik/bangun, nav bawah, font ≥16px, tema, signature.
 
-**Definisi selesai untuk perubahan apapun:** ketiga test hijau + screenshot visual
-kedua tema dilihat mata.
+Test khusus di luar trilogi smoke: `hpp-math-test.js` (aritmatika uang HPP,
+fungsi diekstrak langsung dari `index.html` hasil build — bukan disalin, jadi
+yang diuji betul-betul kode yang dikirim), `sync-test.js` (payload sync
+full/partial disimulasikan lewat 2–3 browser context terpisah, transport
+WebRTC di-skip tapi `collectSyncPayload`/`applySyncPayload` dipanggil apa
+adanya), `init-isolation-test.js` (satu modul gagal init tak boleh mematikan
+modul lain — lihat fix N13).
+
+**Definisi selesai untuk perubahan apapun:** semua test di atas hijau +
+screenshot visual kedua tema dilihat mata.
 
 ---
 
@@ -923,12 +962,12 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 | N5 | PNL: input hari baru MENGGANTI riwayat, bukan menambah; hasil Analisis (beda dari Arsip) hilang tiap reload | `pnAll = days` menimpa total riwayat dari isi kotak input saat itu saja — tidak pernah ditulis ke localStorage (beda dari Arsip yang sejak awal per-tanggal permanen) | riwayat per hari di-upsert ke `pnDays` (localStorage, per tanggal, sama pola dengan Arsip) — `pnAll` selalu materialisasi dari SEMUA tanggal tersimpan, bukan cuma batch terakhir. Mode Urutan Otomatis dihapus (tak cocok model upsert). Ditambah tombol hapus per tanggal (`pnDeleteDay`, lewat `pnApplyFilter()` supaya total/margin ikut recompute valid) — lihat §7 |
 | N6 | Tombol Backup Gabungan (⬇ Export) di Pengaturan "tidak berfungsi" — klik tanpa efek, tanpa error terlihat | Sisa referensi ke `PN_LS_MODE`/`PN_LS_START`/`pnSetMode`/`#pn-start-date` di `part-08-sync.js` (`backupAll`, `collectSyncPayload`, `applySyncPayload`) yang sudah dihapus dari modul PNL saat Mode Urutan Otomatis dibuang (fix N5) — `ReferenceError` di dalam `async function backupAll()` bikin Promise-nya reject tanpa `.catch()`, jadi crash-nya senyap total (unhandled rejection, tak ada toast/pesan). Bonus bug: payload backup/sync juga BELUM menyertakan `pnl.days` (riwayat Analisis akumulatif yang baru) — hanya draft teks + arsip yang ter-backup | hapus semua sisa referensi ke field yang sudah tidak ada; ganti payload PNL jadi `{raw, days: pnDays, arsip: pnArs}` di ketiga fungsi; `applySyncPayload` upsert `pnDays` per tanggal (pola sama dengan arsip) lalu `pnAll = pnMaterializeAll()` + render ulang |
 | N7 | Kolom Margin di tabel HPP tidak berwarna sama sekali (netral, padahal minus) | Class `pos`/`neg`/`warn` ditaruh di `<input class="cell-inp neg">`, tapi CSS `td.pos/.neg/.warn` (§10) cuma menyasar elemen `<td>` — lagipula `.cell-inp` sendiri sudah set `color` eksplisit jadi warna warisan pun kalah spesifisitas | tambah aturan spesifik `tbody td input.cell-inp.pos/.neg/.warn{color:...}` — pelajaran sama dengan bug G3: cek betul elemen APA yang dapat class, bukan cuma "class-nya sudah ada di suatu tempat" |
+| N8 | Overlay konfirmasi (`showConfirm`) tertimbun modal lain saat dipanggil dari dalam modal yang masih terbuka (hapus supplier dari modal edit-nya) — tombol Hapus/Batal tak terklik | Semua `.overlay` berbagi `z-index:1000`; tanpa diferensiasi, elemen yang lebih belakangan di DOM menang tampil di atas. Bug LATEN LAMA — pola identik ("Hapus" kategori dari modal edit kategori) sudah ada sejak awal proyek, tak pernah ketahuan karena tak pernah diuji | `#g-confirm-overlay{z-index:1100;}` — overlay konfirmasi SELALU di atas overlay lain apapun urutan DOM-nya |
 | N9 | **Semua angka desimal di HPP salah 10×–100×.** Margin `12,5%` diterapkan sebagai **125%**; margin `0,5` dibaca `5`; `1.500,75` jadi `150075`; Isi `1,5` jadi `15` | `hppParseAngka` membuang SEMUA titik & koma lalu `parseInt` — `.`/`,` diperlakukan cuma sebagai pemisah ribuan, jadi desimal mustahil. `isi` malah pakai `parseInt(replace(/[^\d]/g,''))` sendiri. Terbukti lewat `tests/hpp-math-test.js` | Parser baru sadar konteks: ada koma → koma = desimal & titik = ribuan; hanya titik → ribuan **hanya kalau** polanya persis `\d{1,3}(\.\d{3})+`, selain itu desimal. Semua penulisan uang lewat `hppRound()` (nudge 1e-9, menutup galat biner spt `0,1+0,2` dan `1,005`). Lihat §8 |
 | N10 | Harga Jual **berubah sendiri** tanpa disentuh — mis. 4.550 → 4.551 | Kolom Margin ditampilkan dibulatkan (`Math.round(487,5)` = `488`), lalu nilai TAMPIL itu dipakai menghitung ulang Harga Jual (`pokok + 488`). Uji 56.000 kombinasi: **11,8% kasus bergeser, sampai Rp 9** (paling parah di mode %, karena persen ditampilkan 2 desimal saja) | Dua lapis: (a) margin ditampilkan apa adanya 2 desimal (`487,5`) dan `hppParseAngka(hppInpVal(x)) === x` diuji round-trip; (b) **struktural** — tiap input simpan `data-prev` berisi string persis yang dirender, `hppTableChange` langsung `return` kalau isinya tidak benar-benar berubah. Harga yang tersimpan tak boleh tersentuh kalau user tidak mengetik apa pun |
 | N11 | Supplier: setelah barang di-rename di Checklist, **riwayat harganya tak bisa dicari lagi** lewat nama sekarang — cuma lewat nama lama yang sudah tidak dipakai | `supAllItemNames()` (isi kotak pencarian di tab Analisis) dedup dari `pricelog` apa adanya (urutan lama→baru) dan mengambil snapshot `nama` PERTAMA yang ketemu untuk tiap itemId — snapshot itu memang sengaja dibekukan per-entri (§8, biar histori tetap valid kalau barang dihapus), tapi dipakai juga untuk pencarian, padahal barangnya MASIH ADA & sudah ganti nama | Kalau `hppFindItem(itemId)` masih menemukan itemnya, pakai nama LIVE-nya untuk pencarian & judul grafik; baru jatuh ke snapshot log **terbaru** (bukan tertua) sebagai fallback kalau barangnya sudah dihapus dari Checklist |
 | N12 | Supplier: harga desimal (mis. hasil nego pecahan per-kg) dibulatkan diam-diam di grafik & tabel riwayat banding harga (tab Analisis) | `supRenderItemChart` pakai `fmtRp()` (`Math.round`) alih-alih `hppFmtNum()` — inkonsisten dengan tabel Input Harga & tabel HPP yang sudah menampilkan presisi 2 desimal | Ganti ke `hppFmtNum()` di kedua tempat (bar grafik & tabel riwayat lengkap) |
 | N13 | Satu modul gagal init (mis. record PNL korup/tak lengkap) bikin modul LAIN yang sama sekali tak terkait ikut mati total — ditemukan tak sengaja saat menguji fitur sync: gestur 5-tap Mode Bos di Stok Kosong berhenti merespons, tanpa pesan error apa pun | `initApp()` memanggil `nkInit(); pnInit(); skInit();` polos berurutan tanpa try/catch. JS: exception yang tak tertangkap di tengah fungsi sinkron **menghentikan sisa fungsi itu** — jadi kalau `pnInit()` (dipanggil di tengah) melempar, baris `skInit()` sesudahnya TIDAK PERNAH dieksekusi sama sekali. Bukan bug aktif (data PNL normal selalu lengkap lewat `pnProcess`), tapi risiko laten: skema berubah di masa depan atau data korup bisa memicu ini | `initModuleSafe(label, fn)` — bungkus tiap panggilan modul (`nkInit`/`pnInit`/`skInit`) dengan try/catch sendiri-sendiri. Satu gagal → `console.error` + toast peringatan (`⚠ Modul X gagal dimuat`, pola sama dengan pelajaran N6: jangan pernah gagal senyap), modul LAIN tetap lanjut init normal. Diuji lewat `tests/init-isolation-test.js` |
-| N8 | Overlay konfirmasi (`showConfirm`) tertimbun modal lain saat dipanggil dari dalam modal yang masih terbuka (hapus supplier dari modal edit-nya) — tombol Hapus/Batal tak terklik | Semua `.overlay` berbagi `z-index:1000`; tanpa diferensiasi, elemen yang lebih belakangan di DOM menang tampil di atas. Bug LATEN LAMA — pola identik ("Hapus" kategori dari modal edit kategori) sudah ada sejak awal proyek, tak pernah ketahuan karena tak pernah diuji | `#g-confirm-overlay{z-index:1100;}` — overlay konfirmasi SELALU di atas overlay lain apapun urutan DOM-nya |
 | P10 | Hasil Analisis PNL hilang tiap reload — user kira "tidak bisa disimpan, cuma read-only saat itu" | `pnAll`/`pnFiltered` cuma variabel in-memory; hanya `brk-pnl-raw` (teks mentah) yang persisten, tampilan tabel/kartu tidak ikut | `pnInit()` panggil `pnProcess(true)` (senyap) kalau ada raw tersimpan — reproses otomatis, lihat §7 |
 
 ### Checklist debug cepat
@@ -937,7 +976,7 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 3. `skSuppress` di-set sebelum menulis output programatik?
 4. Ada `const/let` dipakai sebelum deklarasi (IIFE awal)?
 5. Ada class CSS dipakai dua makna? (pelajaran G3)
-6. Test: 43/43, 103/103, 25/25 masih hijau?
+6. Test: 43/43 (match), hpp-math bersih, 115/115 (smoke), 26/26 (smoke mobile), 19/19 (sync), 5/5 (init-isolation) masih hijau?
 
 ---
 
@@ -977,8 +1016,9 @@ lihat dokumen asal. Penawarnya kini jadi Aturan Wajib §3.
 >    harga sampai 46× secara diam-diam dan salingnya menutupi di total. Mesin baru
 >    boleh bilang "tidak ketemu" — dan itu fitur, bukan kelemahan.
 >
-> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, **103/103**
-> smoke desktop, **25/25** smoke mobile. Kalau kamu mengubah sesuatu dan angka itu
-> turun, kembalikan dulu sebelum melangkah.
+> Angka penjaga mutu yang berlaku saat ini: **43/43** uji mesin, aritmatika HPP
+> bersih (`hpp-math-test.js`), **115/115** smoke desktop, **26/26** smoke mobile,
+> **19/19** sync (full+partial), **5/5** isolasi init. Kalau kamu mengubah
+> sesuatu dan angka itu turun, kembalikan dulu sebelum melangkah.
 >
 > — ✳ *Claude Fable 5 · Anthropic · Juli 2026*
