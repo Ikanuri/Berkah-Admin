@@ -1,173 +1,245 @@
-import { h, ask, confirmBox, toast } from '../dom.js';
+import { h, svg, ask, confirmBox, toast, openCalc, unitPopup } from '../dom.js';
 import { UNITS } from '../../tgcloud/lib/units.js';
 import { fmtNum } from '../../tgcloud/lib/money.js';
 import {
-  categoriesOf, itemsOf, tierOf, supplierName, buildOrderText, checkedCount,
+  categoriesOf, itemsOf, tierOf, supplierName, buildOrderText, allLiveItems,
 } from '../state.js';
-import { categoryChips, ensureActiveCat } from './shared.js';
+import { catBar, searchBox, panel, ensureActiveCat, dateBadge } from './shared.js';
 
 // Draft yang harus selamat dari render ulang (polling).
 const draft = { add: '', search: '' };
+let dragSrc = null;
+
+const CHK_SVG = '<svg width="13" height="10" viewBox="0 0 11 8" fill="none"><path d="M1 4L4 7L10 1" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const ta = h('textarea', { value: text });
-    ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.append(ta); ta.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch { /* abaikan */ }
-    ta.remove();
-    return ok;
-  }
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* lanjut ke fallback */ }
+  const ta = h('textarea', { value: text });
+  ta.style.cssText = 'position:fixed;opacity:0';
+  document.body.append(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* abaikan */ }
+  ta.remove();
+  return ok;
 }
 
-function tierLabel(ctx, itemId) {
+function tierBadge(ctx, itemId) {
   const t = tierOf(ctx.state, itemId);
   if (!t) return null;
-  const who = t.kind === 'tied' ? `${t.count} supplier` : supplierName(ctx.state, t.supplierId);
-  return h('span', { class: 'tier' }, `🏆 ${who} · ${fmtNum(t.price)}`);
+  const who = t.kind === 'tied'
+    ? h('span', { class: 'tier-supplier tier-tied' }, `${t.count} supplier`)
+    : h('span', { class: 'tier-supplier' }, supplierName(ctx.state, t.supplierId));
+  return h('div', { class: 'item-tier-badge sup-item-tier' }, '🏆 ', who, ' ', h('span', { class: 'tier-price' }, fmtNum(t.price)));
 }
 
-function itemRow(ctx, it) {
+function itemCard(ctx, it, siblings) {
   const { act, isBoss } = ctx;
-  return h('div', { class: 'item' + (it.checked ? ' checked' : ''), 'data-id': it.id },
-    h('label', { class: 'item-main' },
-      h('input', { type: 'checkbox', checked: it.checked, onchange: () => act('toggleItem', { id: it.id }) }),
-      h('span', {
-        class: 'name',
-        onclick: async (e) => {
-          e.preventDefault();
-          const v = await ask({ title: 'Ganti nama barang', value: it.name });
-          if (v != null && v.trim() && v.trim() !== it.name) act('updateItem', { id: it.id, name: v }, 'Nama diperbarui');
-        },
-      }, it.name)),
-    h('div', { class: 'item-ctrl' },
-      h('button', { class: 'qty-btn', 'aria-label': 'Kurangi', onclick: () => act('updateItem', { id: it.id, delta: -1 }) }, '−'),
-      h('button', {
-        class: 'qty',
-        onclick: async () => {
-          const v = await ask({ title: 'Jumlah', value: String(it.qty), inputmode: 'decimal' });
-          if (v != null) act('updateItem', { id: it.id, qty: String(v).replace(',', '.') });
-        },
-      }, String(it.qty)),
-      h('button', { class: 'qty-btn', 'aria-label': 'Tambah', onclick: () => act('updateItem', { id: it.id, delta: 1 }) }, '+'),
-      h('select', { onchange: (e) => act('updateItem', { id: it.id, unit: e.target.value }) },
-        UNITS.map((u) => h('option', { value: u, selected: u === it.unit }, u)))),
-    h('div', { class: 'item-meta' },
-      isBoss ? tierLabel(ctx, it.id) : null,
-      it.checked ? h('button', {
-        class: 'link',
-        onclick: async () => {
-          const v = await ask({
-            title: 'Terima barang', label: `Dipesan ${it.qty} ${it.unit}. Berapa yang datang?`,
-            value: String(it.qty), inputmode: 'decimal', ok: 'Terima',
-          });
-          if (v == null) return;
-          const out = await act('fulfillItem', { id: it.id, received: String(v).replace(',', '.') });
-          if (out) toast(out.status === 'resolved' ? 'Terpenuhi ✓' : `Kurang, sisa ${out.qty} ${it.unit}`);
-        },
-      }, 'Terima') : null,
-      h('button', {
-        class: 'link danger-text',
-        onclick: async () => {
-          if (await confirmBox(`Hapus "${it.name}"?`, 'Hapus', true)) act('deleteItem', { id: it.id });
-        },
-      }, 'Hapus')));
+  const badge = it.checked ? dateBadge(it.checkedAt) : null;
+  const card = h('div', { class: 'item-card' + (it.checked ? ' checked' : ''), 'data-id': it.id });
+
+  if (isBoss) {
+    card.draggable = true;
+    card.addEventListener('dragstart', (e) => {
+      dragSrc = it.id; e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => card.classList.add('dragging'), 0);
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+    });
+    card.addEventListener('dragover', (e) => { e.preventDefault(); if (dragSrc !== it.id) card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
+      e.preventDefault(); card.classList.remove('drag-over');
+      const src = siblings.find((x) => x.id === dragSrc);
+      dragSrc = null;
+      if (!src || src.id === it.id || src.categoryId !== it.categoryId) return;
+      const ids = siblings.filter((x) => x.categoryId === it.categoryId).map((x) => x.id);
+      ids.splice(ids.indexOf(src.id), 1);
+      ids.splice(ids.indexOf(it.id), 0, src.id);
+      act('reorderItems', { categoryId: it.categoryId, ids });
+    });
+    card.append(h('span', { class: 'drag-handle' }, '⠿'));
+  }
+
+  card.append(
+    h('div', {
+      class: 'chk' + (it.checked ? ' on' : ''), role: 'checkbox', 'aria-checked': String(it.checked), tabindex: '0',
+      onclick: (e) => { e.stopPropagation(); act('toggleItem', { id: it.id }); },
+    }, it.checked ? svg(CHK_SVG) : null),
+    h('div', { style: 'flex:1;min-width:0;' },
+      h('div', { style: 'display:flex;align-items:center;min-width:0;overflow:hidden;' },
+        h('span', {
+          class: 'item-name', title: it.name,
+          ondblclick: isBoss ? async () => {
+            const v = await ask({ title: 'Ganti nama barang', value: it.name });
+            if (v != null && v.trim() && v.trim() !== it.name) act('updateItem', { id: it.id, name: v }, 'Nama diperbarui');
+          } : null,
+        }, it.name),
+        badge ? h('span', { class: 'date-badge ' + badge.cls }, badge.label) : null),
+      isBoss ? tierBadge(ctx, it.id) : null,
+      h('div', { class: 'qty-row' },
+        h('button', { class: 'qty-btn', 'aria-label': 'Kurangi', onclick: () => act('updateItem', { id: it.id, delta: -1 }) }, '−'),
+        h('span', {
+          class: 'qty-disp',
+          onclick: async () => {
+            const v = await openCalc(it.name, it.unit, it.qty);
+            if (v != null) act('updateItem', { id: it.id, qty: v });
+          },
+        }, String(it.qty)),
+        h('button', { class: 'qty-btn', 'aria-label': 'Tambah', onclick: () => act('updateItem', { id: it.id, delta: 1 }) }, '+'),
+        h('div', { class: 'unit-wrap' },
+          h('button', {
+            class: 'unit-btn',
+            onclick: (e) => {
+              e.stopPropagation();
+              const open = e.currentTarget.parentElement.querySelector('.unit-pop');
+              if (open) { open.remove(); return; }
+              unitPopup(e.currentTarget, UNITS, it.unit, (u) => act('updateItem', { id: it.id, unit: u }));
+            },
+          }, it.unit + ' ▾')),
+        it.checked ? h('button', {
+          class: 'mini-btn', style: 'margin-left:auto',
+          onclick: async () => {
+            const v = await openCalc('Terima: ' + it.name, `dipesan ${it.qty} ${it.unit}`, it.qty);
+            if (v == null) return;
+            const out = await act('fulfillItem', { id: it.id, received: v });
+            if (out) toast(out.status === 'resolved' ? 'Terpenuhi ✓' : `Kurang, sisa ${out.qty} ${it.unit}`);
+          },
+        }, 'Terima') : null)),
+    isBoss ? h('button', {
+      class: 'del-btn', 'aria-label': 'Hapus',
+      onclick: async (e) => {
+        e.stopPropagation();
+        if (await confirmBox(`Hapus "${it.name}"?`, 'Hapus', true)) act('deleteItem', { id: it.id });
+      },
+    }, '×') : null);
+  return card;
 }
 
-function categoryMenu(ctx, cat) {
+async function openCatModal(ctx, cat) {
   const { act, isBoss, state } = ctx;
   const cats = categoriesOf(state);
-  const idx = cats.findIndex((c) => c.id === cat.id);
+  const idx = cat ? cats.findIndex((c) => c.id === cat.id) : -1;
+  const dismiss = () => document.querySelector('.overlay.open')?.dispatchEvent(new CustomEvent('dismiss'));
   const move = (d) => {
     const ids = cats.map((c) => c.id);
     const j = idx + d;
-    if (j < 0 || j >= ids.length) return;
     [ids[idx], ids[j]] = [ids[j], ids[idx]];
+    dismiss();
     act('reorderCategories', { ids });
   };
-  return h('div', { class: 'row wrap cat-tools' },
-    h('button', {
-      class: 'btn small',
-      onclick: async () => {
-        const v = await ask({ title: 'Ganti nama kategori', value: cat.name });
-        if (v != null && v.trim() && v.trim() !== cat.name) act('saveCategory', { id: cat.id, name: v });
-      },
-    }, 'Ganti nama'),
-    isBoss ? [
-      h('button', { class: 'btn small', disabled: idx <= 0, onclick: () => move(-1) }, '◀'),
-      h('button', { class: 'btn small', disabled: idx >= cats.length - 1, onclick: () => move(1) }, '▶'),
-      h('label', { class: 'check-inline' },
-        h('input', {
-          type: 'checkbox', checked: !cat.excludeFromOrder,
-          onchange: (e) => act('saveCategory', { id: cat.id, excludeFromOrder: !e.target.checked }),
-        }), ' Ikut order'),
-      h('button', {
-        class: 'btn small danger',
-        onclick: async () => {
-          if (await confirmBox(`Hapus kategori "${cat.name}" beserta semua barangnya?`, 'Hapus', true)) {
-            act('deleteCategory', { id: cat.id });
-          }
-        },
-      }, 'Hapus'),
-    ] : null);
+  const extraBody = cat && isBoss ? h('div', { class: 'cat-reorder-row' },
+    h('span', { class: 'cat-reorder-lbl' }, 'Urutan'),
+    h('button', { class: 'btn sm', title: 'Geser ke kiri', disabled: idx <= 0, onclick: () => move(-1) }, '◀'),
+    h('button', { class: 'btn sm', title: 'Geser ke kanan', disabled: idx >= cats.length - 1, onclick: () => move(1) }, '▶')) : null;
+  const extraFoot = cat && isBoss ? h('button', {
+    class: 'btn sm danger', style: 'margin-right:auto',
+    onclick: async () => {
+      if (!(await confirmBox(`Hapus kategori "${cat.name}" beserta semua barangnya?`, 'Hapus', true))) return;
+      dismiss();
+      act('deleteCategory', { id: cat.id }, `"${cat.name}" dihapus`);
+    },
+  }, 'Hapus') : null;
+  const v = await ask({
+    title: cat ? 'Ganti Nama Kategori' : 'Kategori Baru', label: cat ? '' : 'Nama kategori',
+    value: cat ? cat.name : '', extraFoot, extraBody,
+  });
+  if (v == null || !v.trim()) return;
+  if (cat) { if (v.trim() !== cat.name) act('saveCategory', { id: cat.id, name: v }, 'Nama diperbarui'); }
+  else act('saveCategory', { name: v }, 'Kategori dibuat');
+}
+
+// Chip filter kategori order (Bos): kategori yang dimatikan tidak ikut "Salin order".
+function outCatBar(ctx) {
+  const cats = categoriesOf(ctx.state);
+  if (!ctx.isBoss || cats.length < 2) return null;
+  const nEx = cats.filter((c) => c.excludeFromOrder).length;
+  return h('div', { style: 'display:flex;margin-left:auto;gap:5px;flex-wrap:wrap;align-items:center;' },
+    cats.map((c) => h('button', {
+      class: 'oc-chip' + (c.excludeFromOrder ? ' off' : ''),
+      title: c.excludeFromOrder ? 'Dikecualikan dari order — ketuk untuk sertakan' : 'Ikut di order — ketuk untuk kecualikan',
+      onclick: () => ctx.act('saveCategory', { id: c.id, excludeFromOrder: !c.excludeFromOrder }),
+    }, h('span', { class: 'oc-mark' }, c.excludeFromOrder ? '✕' : '✓'), c.name)),
+    nEx ? h('span', { class: 'oc-hint' }, `⚠ ${nEx} kategori dikecualikan dari order (centangnya tetap aman)`) : null);
 }
 
 export function renderChecklist(ctx) {
   const { state, act, isBoss } = ctx;
   const catId = ensureActiveCat(state);
-  const addCat = h('button', {
-    class: 'chip add',
-    onclick: async () => {
-      const v = await ask({ title: 'Kategori baru', label: 'Nama kategori' });
-      if (v != null && v.trim()) act('saveCategory', { name: v }, 'Kategori dibuat');
-    },
-  }, '＋');
-
-  if (catId == null) {
-    return h('div', { class: 'view' },
-      h('div', { class: 'empty' }, h('p', {}, 'Belum ada kategori.'), addCat, ' ', h('span', { class: 'muted' }, 'Buat kategori pertama')));
-  }
-
-  const cat = state.categories.get(catId);
   const q = draft.search.trim().toLowerCase();
-  const items = itemsOf(state, catId).filter((i) => !q || i.name.toLowerCase().includes(q));
-  const n = checkedCount(state);
+  const cats = categoriesOf(state);
 
   const addInput = h('textarea', {
-    'data-keep': 'add', rows: 2, placeholder: 'Tambah barang, satu per baris\n5 dus Aqua\n2 kg Gula', value: draft.add,
+    class: 'inp', 'data-keep': 'add', rows: 1, style: 'flex:1;min-height:42px;',
+    placeholder: 'qty satuan nama — atau paste banyak baris', value: draft.add,
     oninput: (e) => { draft.add = e.target.value; },
   });
-
-  return h('div', { class: 'view' },
-    categoryChips(ctx, { extra: addCat }),
-    categoryMenu(ctx, cat),
-    h('div', { class: 'add-box' }, addInput,
+  const catName = catId != null ? state.categories.get(catId)?.name : null;
+  const inputPanel = panel(isBoss && catName ? `Tambah Barang — ${catName}` : 'Input Barang', h('div', { class: 'panel-body' },
+    h('div', { style: 'display:flex;gap:8px;' }, addInput,
       h('button', {
         class: 'btn primary',
         onclick: async () => {
+          if (catId == null) { toast('Buat kategori dulu'); return; }
           if (!draft.add.trim()) return;
           const out = await act('addItems', { categoryId: catId, text: draft.add });
-          if (out) { draft.add = ''; toast(`+${out.added} baru, ${out.updated} diperbarui`); ctx.render(); }
+          if (out) {
+            draft.add = '';
+            toast([out.added && `+${out.added} baru`, out.updated && `${out.updated} diperbarui`].filter(Boolean).join(' · '));
+            ctx.render();
+          }
         },
-      }, 'Tambah')),
-    h('input', {
-      type: 'search', 'data-keep': 'search', class: 'search', placeholder: 'Cari barang…', value: draft.search,
+      }, '+ Tambah')),
+    h('div', { class: 'hint' }, 'Format opsional: ', h('span', { class: 'hl' }, 'qty satuan nama'), '. Item baru masuk tanpa centang — centang = perlu diorder.')));
+
+  const grid = h('div', { class: 'sk-grid' });
+  if (q) {
+    let total = 0;
+    for (const c of cats) {
+      const matched = itemsOf(state, c.id).filter((i) => i.name.toLowerCase().includes(q));
+      if (!matched.length) continue;
+      grid.append(h('div', { class: 'sk-cat-label' }, c.name));
+      matched.forEach((i) => grid.append(itemCard(ctx, i, allLiveItems(state))));
+      total += matched.length;
+    }
+    if (!total) grid.append(h('div', { class: 'empty', style: 'grid-column:1/-1' }, h('div', { class: 'empty-title' }, 'Tidak ketemu'), h('div', { class: 'empty-sub' }, `"${draft.search}" tidak ada di kategori manapun`)));
+  } else if (catId != null) {
+    const list = itemsOf(state, catId);
+    if (!list.length) grid.append(h('div', { class: 'empty', style: 'grid-column:1/-1' }, h('div', { class: 'empty-icon' }, '📦'), h('div', { class: 'empty-title' }, 'Belum ada barang'), h('div', { class: 'empty-sub' }, 'Tambahkan lewat kotak Input Barang di atas')));
+    list.forEach((i) => grid.append(itemCard(ctx, i, list)));
+  } else {
+    grid.append(h('div', { class: 'empty', style: 'grid-column:1/-1' }, h('div', { class: 'empty-icon' }, '🗂'), h('div', { class: 'empty-title' }, 'Belum ada kategori'), h('div', { class: 'empty-sub' }, 'Ketuk "+ Kategori" untuk membuat yang pertama')));
+  }
+
+  const activeItems = catId != null ? itemsOf(state, catId) : [];
+  const nActive = activeItems.filter((i) => i.checked).length;
+  const orderText = buildOrderText(state, { applyExclude: isBoss });
+
+  return h('div', {},
+    inputPanel,
+    catBar(ctx, { onAdd: () => openCatModal(ctx, null), onEdit: (c) => openCatModal(ctx, c) }),
+    searchBox({
+      id: 'search', value: draft.search, placeholder: 'Cari barang (semua kategori)…',
       oninput: (e) => { draft.search = e.target.value; ctx.render(); },
+      onclear: () => { draft.search = ''; ctx.render(); },
     }),
-    items.length
-      ? h('div', { class: 'list' }, items.map((it) => itemRow(ctx, it)))
-      : h('div', { class: 'empty' }, q ? 'Tidak ada yang cocok.' : 'Belum ada barang di kategori ini.'),
-    h('div', { class: 'footer-bar' },
-      h('button', {
-        class: 'btn primary wide', disabled: n === 0,
-        onclick: async () => {
-          const text = buildOrderText(state, { applyExclude: isBoss });
-          if (!text) { toast('Tidak ada yang tercentang'); return; }
-          toast((await copyText(text)) ? 'Teks order disalin' : 'Gagal menyalin');
-        },
-      }, `Salin order (${n})`)));
+    grid,
+    activeItems.length && !q ? h('div', { class: 'counter-line' },
+      h('span', {}, h('span', { class: 'hl' }, nActive), ' dari ', h('span', { class: 'hl' }, activeItems.length), ' dicentang')) : null,
+    h('div', { class: 'panel', style: 'margin-top:16px;' },
+      h('div', { class: 'panel-head', style: 'flex-wrap:wrap;row-gap:8px;' },
+        h('div', { class: 'panel-title', style: 'font-size:14px;' }, 'Order'),
+        outCatBar(ctx)),
+      h('div', { class: 'panel-body' },
+        h('div', { class: 'out-wrap' },
+          h('div', { class: 'out-actions' },
+            h('button', {
+              class: 'mini-btn', disabled: !orderText,
+              onclick: async () => toast((await copyText(orderText)) ? 'Teks order disalin' : 'Gagal menyalin'),
+            }, 'Salin')),
+          h('textarea', {
+            class: 'inp', readonly: true, style: 'width:100%;min-height:130px;',
+            placeholder: 'Item tercentang muncul di sini — siap disalin ke WhatsApp', value: orderText,
+          })))));
 }

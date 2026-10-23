@@ -66,6 +66,11 @@ export function buildOrderText(state, { applyExclude = false } = {}) {
   return lines.join('\n');
 }
 
+// Semua barang hidup, urut kategori lalu sortOrder (untuk pencarian lintas kategori).
+export function allLiveItems(state) {
+  return categoriesOf(state).flatMap((c) => itemsOf(state, c.id));
+}
+
 export function checkedCount(state) {
   return live(state.items).filter((i) => i.checked).length;
 }

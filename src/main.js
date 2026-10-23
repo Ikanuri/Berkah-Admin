@@ -1,22 +1,23 @@
 import './style.css';
-import { h } from './dom.js';
+import { h, hasUnitPop } from './dom.js';
 import { call, mode } from './api.js';
 import { createState } from './state.js';
 import { createSync } from './actions.js';
+import { applyTheme, cycleTheme } from './theme.js';
 import { renderChecklist } from './views/checklist.js';
 import { renderHpp } from './views/hpp.js';
 import { renderSupplier } from './views/supplier.js';
-import { renderUsers } from './views/users.js';
+import { openSettings } from './views/settings.js';
 
 const app = document.getElementById('app');
 const state = createState();
-let view = 'stok';
+let view = 'checklist';
 
+// Sub-tampilan modul Stok. HPP dan Supplier = harga modal, khusus Bos.
 const VIEWS = {
-  stok: { label: 'Stok', render: renderChecklist, boss: false },
-  hpp: { label: 'HPP', render: renderHpp, boss: true },
-  supplier: { label: 'Supplier', render: renderSupplier, boss: true },
-  users: { label: 'Pengguna', render: renderUsers, boss: true },
+  checklist: { label: '☑ Checklist', render: renderChecklist, boss: false },
+  hpp: { label: '💰 HPP', render: renderHpp, boss: true },
+  supplier: { label: '🚚 Supplier', render: renderSupplier, boss: true },
 };
 
 let sync;
@@ -28,39 +29,58 @@ const ctx = {
   act: (...a) => sync.act(...a),
 };
 
+const ROLE = { boss: ['badge badge-boss', 'Mode Bos'], worker: ['badge badge-timeout', 'Karyawan'] };
+
+function dateLabel() {
+  return new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function shell() {
   const m = mode();
-  const tabs = Object.entries(VIEWS).filter(([, v]) => !v.boss || ctx.isBoss);
-  if (!VIEWS[view] || (VIEWS[view].boss && !ctx.isBoss)) view = 'stok';
-  return h('div', { class: 'shell' },
+  if (!VIEWS[view] || (VIEWS[view].boss && !ctx.isBoss)) view = 'checklist';
+  const [roleCls, roleLbl] = ROLE[state.me.role];
+  return h('div', {},
     m.kind === 'dev' ? h('div', { class: 'dev-banner' }, `MODE DEV · data lokal browser · peran: ${m.role}`) : null,
-    h('header', {},
-      h('h1', {}, 'Toko Berkah'),
-      h('span', { class: 'who' }, state.me.name + ' · ' + { boss: 'Bos', worker: 'Karyawan' }[state.me.role])),
-    tabs.length > 1 ? h('nav', { class: 'tabs' }, tabs.map(([key, v]) => h('button', {
-      class: 'tab' + (key === view ? ' active' : ''),
-      onclick: () => { view = key; render(); },
-    }, v.label))) : null,
-    VIEWS[view].render(ctx));
+    h('div', { class: 'topbar' }, h('div', { class: 'topbar-inner' },
+      h('div', { class: 'brand', title: 'Toko Berkah' },
+        h('span', { class: 'brand-mark' }, '✳'),
+        h('span', { class: 'brand-name' }, 'Toko ', h('em', {}, 'Berkah'))),
+      h('div', { style: 'flex:1' }),
+      h('div', { class: 'top-actions' },
+        h('button', { class: 'icon-btn', title: 'Ganti tema', onclick: () => { cycleTheme(); } }, '◐'),
+        h('button', { class: 'icon-btn', title: 'Pengaturan', onclick: () => openSettings(ctx) }, '⚙')))),
+    h('div', { class: 'wrap' },
+      h('div', { class: 'module active' },
+        h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;' },
+          h('span', { style: 'font-family:var(--serif);font-style:italic;font-size:14px;color:var(--ink3);' }, dateLabel()),
+          h('span', { class: roleCls }, roleLbl)),
+        ctx.isBoss ? h('div', { class: 'pn-subnav' }, Object.entries(VIEWS).map(([key, v]) => h('button', {
+          class: 'sub-btn' + (key === view ? ' active' : ''),
+          onclick: () => { view = key; render(); },
+        }, v.label))) : null,
+        VIEWS[view].render(ctx))),
+    h('div', { class: 'app-footer' }, h('span', { class: 'sig' }, h('span', { class: 'spark' }, '✳'), ' ', h('b', {}, 'Toko Berkah'), ' · Telegram Mini App')));
 }
 
 function render() {
   const a = document.activeElement;
   const keep = a?.dataset?.keep;
   const pos = a && 'selectionStart' in a ? a.selectionStart : null;
+  const scroll = window.scrollY;
   app.replaceChildren(shell());
+  window.scrollTo(0, scroll);
   if (keep) {
     const el = app.querySelector(`[data-keep="${keep}"]`);
     if (el) { el.focus(); try { if (pos != null) el.setSelectionRange(pos, pos); } catch { /* abaikan */ } }
   }
 }
 
-// Render dari polling jangan merebut fokus saat orang sedang mengetik/memilih.
+// Render dari polling jangan merebut fokus saat orang mengetik atau memilih satuan.
 // Hanya isian teks yang dilindungi; checkbox/tombol/select selesai begitu diubah.
 const TEXT_ENTRY = 'textarea, input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit])';
 const typing = () => {
   const a = document.activeElement;
-  return !!(a && app.contains(a) && a.matches(TEXT_ENTRY));
+  return !!((a && app.contains(a) && a.matches(TEXT_ENTRY)) || hasUnitPop());
 };
 function scheduleRender() {
   if (typing()) { dirty = true; return; }
@@ -72,26 +92,28 @@ app.addEventListener('focusout', () => {
 });
 
 function screen(title, text, extra) {
-  app.replaceChildren(h('div', { class: 'shell' }, h('div', { class: 'center' }, h('h1', {}, title), h('p', {}, text), extra)));
+  app.replaceChildren(h('div', { class: 'center-screen' }, h('h1', {}, 'Toko ', h('em', { style: 'font-weight:400' }, 'Berkah')), h('p', {}, text), h('div', { class: 'hint' }, title), extra));
 }
 
 async function boot() {
+  applyTheme();
   const tg = window.Telegram?.WebApp;
-  if (tg) { try { tg.ready(); tg.expand(); } catch { /* abaikan */ } }
+  if (tg) { try { tg.ready(); tg.expand(); tg.onEvent?.('themeChanged', applyTheme); } catch { /* abaikan */ } }
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
 
   if (mode().kind === 'none') {
-    screen('Toko Berkah', 'Buka aplikasi ini lewat Telegram (menu bot).');
+    screen('Telegram', 'Buka aplikasi ini lewat Telegram (menu bot).');
     return;
   }
   try {
     state.me = await call('me');
   } catch (e) {
-    screen('Gagal masuk', e.message, h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Coba lagi'));
+    screen('Gagal masuk', e.message, h('button', { class: 'btn primary', style: 'margin-top:12px', onclick: () => location.reload() }, 'Coba lagi'));
     return;
   }
   if (state.me.role === 'pending') {
     screen('Menunggu persetujuan', 'Akun Anda sudah terdaftar. Minta Bos menyetujui, lalu muat ulang.',
-      h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Cek lagi'));
+      h('button', { class: 'btn primary', style: 'margin-top:12px', onclick: () => location.reload() }, 'Cek lagi'));
     return;
   }
   sync = createSync(state, scheduleRender);

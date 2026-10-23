@@ -1,5 +1,5 @@
 // Aturan bisnis Stok yang murni (tanpa DB). Sumber: legacy v1.5.0.
-import { roundQty } from './money.js';
+import { roundQty, cost } from './money.js';
 
 import { UNITS } from './units.js';
 const UNITS_SET = new Set(UNITS);
@@ -92,4 +92,21 @@ export function applySupplierPrice(item, hargaBeli) {
 // Penutup kategori: minimal 1 kategori aktif (skDeleteCat, 4782).
 export function canDeleteCategory(activeCount) {
   return activeCount > 1;
+}
+
+// hppApplyBulkMargin (legacy v1.5.0): Harga Jual = pokok + margin, dibulatkan ke
+// rupiah. Barang tanpa pokok (Isi/Harga Beli kosong) dilewati; hasil <= 0 tidak
+// pernah ditulis. mode 'pct' dihitung dari MODAL (pokok), bukan dari harga jual.
+export function bulkMargin(items, { mode, value }) {
+  const updates = [];
+  let skipped = 0, invalid = 0;
+  for (const it of items) {
+    const pokok = cost(it);
+    if (!pokok) { skipped++; continue; }
+    const margin = mode === 'pct' ? pokok * (value / 100) : value;
+    const jual = Math.round(pokok + margin);
+    if (jual <= 0) { invalid++; continue; }
+    updates.push({ id: it.id, hargaJual: jual });
+  }
+  return { updates, skipped, invalid };
 }

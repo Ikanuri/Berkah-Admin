@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { parseAngka, round, fmtNum, inpVal, cost, pctOf, roundQty } from '../tgcloud/lib/money.js';
 import { rankFromEntries, winners, tierSummary } from '../tgcloud/lib/tier.js';
-import { toggle, adjustQty, setQty, fulfill, mergeAddLine, applySupplierPrice, parseLine, normName, canDeleteCategory, orderLine } from '../tgcloud/lib/rules.js';
+import { toggle, adjustQty, setQty, fulfill, mergeAddLine, applySupplierPrice, parseLine, normName, canDeleteCategory, orderLine, bulkMargin } from '../tgcloud/lib/rules.js';
 import { shapeItemFor, canSeeSuppliers, isApproved } from '../tgcloud/lib/shape.js';
 
 let n = 0;
@@ -123,6 +123,23 @@ t('applySupplierPrice: hanya > 0, menimpa Harga Beli', () => {
   assert.equal(applySupplierPrice({ unit: 'dus' }, -5), null);
   assert.deepEqual(applySupplierPrice({ unit: 'dus', satuanHpp: 'btl' }, 1500), { patch: { hargaBeli: 1500 }, unit: 'btl' });
   assert.deepEqual(applySupplierPrice({ unit: 'dus' }, '2000'), { patch: { hargaBeli: 2000 }, unit: 'dus' });
+});
+
+t('bulkMargin: rupiah, persen dari modal, lewati & tolak', () => {
+  const items = [
+    { id: 'a', isi: 10, hargaBeli: 100000 },  // pokok 10.000
+    { id: 'b', isi: 4, hargaBeli: 50 },       // pokok 12,5
+    { id: 'c', hargaBeli: 1000 },             // tanpa isi: dilewati
+    { id: 'd', isi: 1, hargaBeli: 100 },      // pokok 100
+  ];
+  assert.deepEqual(bulkMargin(items, { mode: 'rp', value: 250 }).updates, [
+    { id: 'a', hargaJual: 10250 }, { id: 'b', hargaJual: 263 }, { id: 'd', hargaJual: 350 }]);
+  const pct = bulkMargin(items, { mode: 'pct', value: 12.5 });
+  assert.equal(pct.updates.find((u) => u.id === 'a').hargaJual, 11250, 'pokok 10.000 + 12,5% = 11.250');
+  assert.equal(pct.skipped, 1);
+  const neg = bulkMargin(items, { mode: 'rp', value: -200 });
+  assert.deepEqual(neg.updates.map((u) => u.id), ['a'], 'hanya yang tetap > 0');
+  assert.equal(neg.invalid, 2);
 });
 
 t('canDeleteCategory: minimal 1', () => {

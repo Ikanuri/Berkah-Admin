@@ -10,7 +10,7 @@ import { shapeItemFor, canSeeSuppliers } from '../tgcloud/lib/shape.js';
 import { round } from '../tgcloud/lib/money.js';
 import {
   parseLine, normName, mergeAddLine, toggle, adjustQty, setQty, fulfill,
-  applySupplierPrice, canDeleteCategory,
+  applySupplierPrice, canDeleteCategory, bulkMargin,
 } from '../tgcloud/lib/rules.js';
 
 const KEY = 'berkah-dev-db';
@@ -247,6 +247,18 @@ export class LocalStore {
     if ('satuanHpp' in input) patch.satuanHpp = input.satuanHpp || null;
     Object.assign(it, patch, { updatedAt: Date.now() });
     return { ok: true };
+  }
+
+  ep_applyMargin({ categoryId, mode, value }) {
+    this.need('boss');
+    const v = Number(value);
+    if (!isFinite(v)) fail('Nilai margin tidak valid');
+    if (categoryId != null) this.category(categoryId);
+    const rows = this.db.items.filter((i) => !i.deletedAt && (categoryId == null || i.categoryId === categoryId));
+    const { updates, skipped, invalid } = bulkMargin(rows, { mode: mode === 'pct' ? 'pct' : 'rp', value: v });
+    const now = Date.now();
+    for (const up of updates) Object.assign(this.db.items.find((i) => i.id === up.id), { hargaJual: up.hargaJual, updatedAt: now });
+    return { updated: updates.length, skipped, invalid };
   }
 
   ep_saveSupplier({ id, name }) {

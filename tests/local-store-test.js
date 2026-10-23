@@ -13,7 +13,7 @@ await t('worker ditolak untuk endpoint Bos', async () => {
   for (const [ep, input] of [
     ['setHpp', { id: 'x' }], ['saveSupplier', { name: 'A' }], ['deleteSupplier', { id: 1 }],
     ['savePrices', {}], ['deletePriceEntry', { id: 'x' }], ['listUsers', {}],
-    ['setUserRole', { tgId: 2, role: 'boss' }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
+    ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
   ]) await rejects(s.call(ep, input), /Tidak punya akses/, ep);
 });
 
@@ -99,6 +99,29 @@ await t('hapus supplier: riwayat tetap, nama tetap terbaca', async () => {
   await s.call('saveSupplier', { name: 'Lama' }); // nama sama menghidupkan lagi
   applyChanges(st, await s.call('getChanges', { since: 0 }));
   assert.equal(st.suppliers.get(1).deletedAt, null);
+});
+
+await t('applyMargin: dihitung dari modal, lintas/kategori tunggal', async () => {
+  const s = new LocalStore('boss', mem());
+  await s.call('saveCategory', { name: 'A' });
+  await s.call('saveCategory', { name: 'B' });
+  await s.call('addItems', { categoryId: 1, text: '1 dus X\n1 dus Y' });
+  await s.call('addItems', { categoryId: 2, text: '1 dus Z' });
+  const items = (await s.call('getChanges', {})).items;
+  const [x, y, z] = ['X', 'Y', 'Z'].map((nm) => items.find((i) => i.name === nm).id);
+  await s.call('setHpp', { id: x, isi: 10, hargaBeli: 100000 }); // pokok 10.000
+  await s.call('setHpp', { id: z, isi: 1, hargaBeli: 200 });     // pokok 200
+  const r1 = await s.call('applyMargin', { categoryId: 1, mode: 'pct', value: 12.5 });
+  assert.deepEqual(r1, { updated: 1, skipped: 1, invalid: 0 }); // Y tanpa pokok dilewati
+  let d = (await s.call('getChanges', {})).items;
+  assert.equal(d.find((i) => i.id === x).hargaJual, 11250);
+  assert.equal(d.find((i) => i.id === z).hargaJual ?? null, null, 'kategori lain tidak tersentuh');
+  const r2 = await s.call('applyMargin', { categoryId: null, mode: 'rp', value: -300 });
+  assert.deepEqual(r2, { updated: 1, skipped: 1, invalid: 1 }); // X tetap > 0; Z jadi <= 0 ditolak
+  d = (await s.call('getChanges', {})).items;
+  assert.equal(d.find((i) => i.id === x).hargaJual, 9700);
+  await rejects(s.call('applyMargin', { categoryId: 99, mode: 'rp', value: 1 }), /Kategori tidak ditemukan/);
+  void y;
 });
 
 console.log(`\nHASIL: ${n} uji LocalStore lulus`);
