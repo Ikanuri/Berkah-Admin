@@ -79,7 +79,23 @@ jobs:
           fi
 
       - name: Deploy kode
-        run: npx tgcloud push --force
+        run: |
+          # Bug @tgcloud/cli 0.2.0: pada deploy yang ikut mengubah skema DB, server menerima
+          # semua modul tetapi CLI crash saat menulis snapshot lokal (canonical_modules berisi
+          # `false`). Itu bukan kegagalan deploy; karena itu error khas ini TIDAK langsung
+          # dianggap sukses: hasilnya diverifikasi lewat fetch + status (cloud == berkas lokal).
+          out=$(npx tgcloud push --force 2>&1); rc=$?
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            if grep -q "snapshot.js" <<<"$out" && grep -q "ERR_INVALID_ARG_TYPE" <<<"$out"; then
+              echo "::warning::push diterima server tetapi CLI gagal menulis snapshot; memverifikasi lewat fetch + status"
+              npx tgcloud fetch
+              status=$(npx tgcloud status); echo "$status"
+              grep -q "Working directory clean" <<<"$status" || { echo "::error::cloud tidak sama dengan berkas lokal setelah push"; exit 1; }
+            else
+              exit $rc
+            fi
+          fi
 
       - name: Uji restore di database cloud (data sementara, dibersihkan)
         run: |
