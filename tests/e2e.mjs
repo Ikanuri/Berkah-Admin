@@ -54,7 +54,7 @@ await step('di luar Telegram tanpa ?dev: pesan "buka lewat Telegram"', async () 
 
 await step('Bos: topbar bermerek, state kosong, buat kategori', async () => {
   await page.goto(BASE + '?dev=boss');
-  await page.waitForSelector('.topbar .brand-name');
+  await page.waitForSelector('.topbar .brand-name', { state: 'attached' });
   // tombol Pengaturan harus terlihat penuh di layar HP (regresi: terdorong keluar oleh tab modul)
   const gear = await page.locator('.icon-btn[title="Pengaturan"]').boundingBox();
   assert.ok(gear.x + gear.width <= 390, 'tombol Pengaturan di dalam layar: ' + (gear.x + gear.width));
