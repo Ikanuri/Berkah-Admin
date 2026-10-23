@@ -12,6 +12,8 @@ export function createState() {
     priceLog: new Map(),
     remRecurring: new Map(), // kunci: supplierId
     remOneoff: new Map(),
+    workerItems: new Map(),  // daftar pribadi Karyawan (halaman Penerimaan)
+    receipts: new Map(),     // setoran (Bos: semua; Karyawan: miliknya)
     alerts: [],              // pesan pengingat yang baru dibunyikan (untuk spanduk)
     serverTime: 0,
     activeCat: null,
@@ -21,7 +23,7 @@ export function createState() {
 }
 
 // tabel -> nama kolom kunci
-const TABLES = { categories: 'id', items: 'id', suppliers: 'id', priceLog: 'id', remRecurring: 'supplierId', remOneoff: 'id' };
+const TABLES = { categories: 'id', items: 'id', suppliers: 'id', priceLog: 'id', remRecurring: 'supplierId', remOneoff: 'id', workerItems: 'id', receipts: 'id' };
 
 // Terapkan balasan getChanges. Mengembalikan true bila ada baris yang berubah.
 export function applyChanges(state, delta) {
@@ -144,3 +146,12 @@ export function allLiveItems(state) {
 export function checkedCount(state) {
   return live(state.items).filter((i) => i.checked).length;
 }
+
+// ── Penerimaan ──
+export function workerItemsOf(state) { return live(state.workerItems).sort(bySort); }
+export function receiptsOf(state, status = null) {
+  return [...state.receipts.values()]
+    .filter((r) => !status || r.status === status)
+    .sort((a, b) => b.submittedAt - a.submittedAt);
+}
+export const pendingReceiptCount = (state) => receiptsOf(state, 'pending').length;

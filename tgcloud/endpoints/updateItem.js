@@ -6,7 +6,7 @@ import { adjustQty, setQty } from '../lib/rules.js';
 import { UNITS } from '../lib/units.js';
 
 export default async function (input, ctx) {
-  const u = await requireRole(ctx, 'boss', 'worker');
+  const u = await requireRole(ctx, 'boss');
   const it = await getItem(input?.id);
   const patch = {};
   if (typeof input.name === 'string') {

@@ -11,6 +11,9 @@ import { renderSupplier } from './views/supplier.js';
 import { openSettings } from './views/settings.js';
 import { renderNota } from './views/nota.js';
 import { renderPnl } from './views/pnl.js';
+import { renderPenerimaan } from './views/penerimaan.js';
+import { renderReceipts, openReview, firstPending } from './views/receipts.js';
+import { pendingReceiptCount } from './state.js';
 
 const app = document.getElementById('app');
 const state = createState();
@@ -22,6 +25,7 @@ const VIEWS = {
   checklist: { label: '☑ Checklist', render: renderChecklist, boss: false },
   hpp: { label: '💰 HPP', render: renderHpp, boss: true },
   supplier: { label: '🚚 Supplier', render: renderSupplier, boss: true },
+  receipts: { label: '📥 Penerimaan', render: renderReceipts, boss: true, badge: () => pendingReceiptCount(state) },
 };
 
 let sync;
@@ -41,14 +45,18 @@ function dateLabel() {
 
 function shell() {
   const m = mode();
-  if (mod !== 'stok' && !ctx.isBoss) mod = 'stok';
-  if (!VIEWS[view] || (VIEWS[view].boss && !ctx.isBoss)) view = 'checklist';
+  if (!ctx.isBoss) mod = 'stok';
+  if (!VIEWS[view]) view = 'checklist';
   const [roleCls, roleLbl] = ROLE[state.me.role];
   return h('div', {},
     state.alerts.length ? h('div', { id: 'remind-banner' },
       h('span', { class: 'srb-ico' }, '🔔'),
       h('div', { class: 'srb-msg' }, state.alerts.join('\n')),
       h('button', { class: 'srb-close', onclick: () => { state.alerts.length = 0; render(); } }, 'Tutup')) : null,
+    ctx.isBoss && pendingReceiptCount(state) ? h('div', { id: 'receipt-banner', class: 'receipt-banner' },
+      h('span', { class: 'srb-ico' }, '📥'),
+      h('div', { class: 'srb-msg' }, `${pendingReceiptCount(state)} setoran dari karyawan menunggu persetujuan`),
+      h('button', { class: 'srb-close', id: 'receipt-review', onclick: () => { mod = 'stok'; view = 'receipts'; const r = firstPending(ctx); render(); if (r) openReview(ctx, r); } }, 'Tinjau')) : null,
     m.kind === 'dev' ? h('div', { class: 'dev-banner' }, `MODE DEV · data lokal browser · peran: ${m.role}`) : null,
     m.kind === 'offline' ? h('div', { class: 'dev-banner', id: 'offline-banner' }, 'MODE OFFLINE · data tersimpan di browser perangkat ini · tukar data dengan versi online lewat Backup/Restore') : null,
     h('div', { class: 'topbar' }, h('div', { class: 'topbar-inner' },
@@ -72,13 +80,14 @@ function shell() {
           h('span', { class: 'sk-la-dot' }),
           h('span', {}, 'Diubah ', h('b', {}, relTime(state.lastAct.ts)), ' — ', state.lastAct.desc,
             state.lastAct.by ? h('span', { style: 'color:var(--ink4);' }, ' · ' + state.lastAct.by) : null)) : null,
-        mod === 'nota' ? renderNota(ctx) : null,
-        mod === 'pnl' ? renderPnl(ctx) : null,
+        ctx.isBoss ? null : renderPenerimaan(ctx),
+        mod === 'nota' && ctx.isBoss ? renderNota(ctx) : null,
+        mod === 'pnl' && ctx.isBoss ? renderPnl(ctx) : null,
         mod === 'stok' && ctx.isBoss ? h('div', { class: 'pn-subnav' }, Object.entries(VIEWS).map(([key, v]) => h('button', {
           class: 'sub-btn' + (key === view ? ' active' : ''),
           onclick: () => { view = key; render(); },
-        }, v.label))) : null,
-        mod === 'stok' ? VIEWS[view].render(ctx) : null)),
+        }, v.label, v.badge && v.badge() ? h('span', { class: 'sub-badge' }, String(v.badge())) : null))) : null,
+        mod === 'stok' && ctx.isBoss ? VIEWS[view].render(ctx) : null)),
     h('div', { class: 'app-footer' }, h('span', { class: 'sig' }, h('span', { class: 'spark' }, '✳'), ' ', h('b', {}, 'Toko Berkah'), ' · Telegram Mini App')));
 }
 

@@ -6,7 +6,7 @@ import { requireRole } from '../lib/auth.js';
 import { getItem } from '../lib/store.js';
 
 export default async function (input, ctx) {
-  await requireRole(ctx, 'boss', 'worker');
+  await requireRole(ctx, 'boss');
   const ids = Array.isArray(input?.ids) ? input.ids : [];
   const now = Date.now();
   for (let i = 0; i < ids.length; i++) {

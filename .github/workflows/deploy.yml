@@ -128,6 +128,14 @@ jobs:
           echo "$out"
           [ $rc -eq 0 ] && grep -q "pnlArsipReplaced" <<<"$out"
 
+      - name: Uji jalur DB Penerimaan di database cloud (data tak terlihat klien, dibersihkan)
+        run: |
+          cp scripts/ci/cloud-receipt-test.js tgcloud/endpoints/zzCloudReceiptTest.js
+          out=$(npx tgcloud run endpoints/zzCloudReceiptTest '{}' 2>&1) && rc=0 || rc=$?
+          rm -f tgcloud/endpoints/zzCloudReceiptTest.js
+          echo "$out"
+          [ $rc -eq 0 ] && grep -q "claimRaceWinners" <<<"$out"
+
       - name: Diagnosa pasca-deploy
         run: scripts/ci/diagnose.sh
 

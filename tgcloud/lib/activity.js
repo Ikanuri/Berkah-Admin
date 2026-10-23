@@ -20,6 +20,9 @@ export function describeActivity(action, d = {}) {
     }
     case 'deleteItem': return `dihapus: ${d.name}`;
     case 'fulfill': return `diterima: ${d.name} (${d.received}${d.status === 'partial' ? ', kurang' : ''})`;
+    case 'receiptSubmit': return `setoran dari ${d.worker}: ${d.n} barang`;
+    case 'receiptApprove': return `setoran ${d.worker} disetujui: ${d.resolved} terpenuhi, ${d.partial} kurang${d.unmatched ? `, ${d.unmatched} tidak cocok` : ''}`;
+    case 'receiptReject': return `setoran ${d.worker} ditolak (${d.n} barang)`;
     case 'addCategory': return `kategori dibuat: ${d.name}`;
     case 'deleteCategory': return `kategori dihapus: ${d.name}`;
     case 'checkAll': return `centang semua${d.category ? ` di kategori "${d.category}"` : ''} (${d.n} item)`;
@@ -48,7 +51,7 @@ export function latestActivity(rows) {
 // Aksi yang menyentuh harga modal / supplier / pengguna: tidak boleh terlihat Karyawan.
 export const BOSS_ONLY_ACTIONS = new Set([
   'savePrices', 'applyMargin', 'setHpp', 'deletePriceEntry',
-  'addSupplier', 'renameSupplier', 'deleteSupplier', 'setUserRole', 'restore', 'exportBackup', 'saveRecurring', 'saveOneOff', 'notaImportCsv', 'notaSave',
+  'addSupplier', 'renameSupplier', 'deleteSupplier', 'setUserRole', 'restore', 'exportBackup', 'saveRecurring', 'saveOneOff', 'notaImportCsv', 'notaSave', 'receiptSubmit', 'receiptApprove', 'receiptReject',
 ]);
 
 export function visibleActivity(role, rows) {

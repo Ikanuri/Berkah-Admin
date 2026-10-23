@@ -100,16 +100,7 @@ function itemCard(ctx, it, siblings) {
               if (open) { open.remove(); return; }
               unitPopup(e.currentTarget, UNITS, it.unit, (u) => act('updateItem', { id: it.id, unit: u }));
             },
-          }, it.unit + ' ▾')),
-        it.checked ? h('button', {
-          class: 'mini-btn', style: 'margin-left:auto',
-          onclick: async () => {
-            const v = await openCalc('Terima: ' + it.name, `dipesan ${it.qty} ${it.unit}`, it.qty);
-            if (v == null) return;
-            const out = await act('fulfillItem', { id: it.id, received: v });
-            if (out) toast(out.status === 'resolved' ? 'Terpenuhi ✓' : `Kurang, sisa ${out.qty} ${it.unit}`);
-          },
-        }, 'Terima') : null)),
+          }, it.unit + ' ▾')))),
     isBoss ? h('button', {
       class: 'del-btn', 'aria-label': 'Hapus',
       onclick: async (e) => {

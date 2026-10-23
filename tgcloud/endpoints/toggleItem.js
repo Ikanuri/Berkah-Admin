@@ -5,7 +5,7 @@ import { getItem, touchItem } from '../lib/store.js';
 import { toggle } from '../lib/rules.js';
 
 export default async function (input, ctx) {
-  const u = await requireRole(ctx, 'boss', 'worker');
+  const u = await requireRole(ctx, 'boss');
   const it = await getItem(input?.id);
   const now = Date.now();
   const { patch, logged } = toggle(it, now);

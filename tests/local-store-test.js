@@ -15,6 +15,9 @@ await t('worker ditolak untuk endpoint Bos', async () => {
     ['setHpp', { id: 'x' }], ['saveSupplier', { name: 'A' }], ['deleteSupplier', { id: 1 }],
     ['savePrices', {}], ['deletePriceEntry', { id: 'x' }], ['listUsers', {}],
     ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['clearItems', {}], ['saveRecurring', { supplierId: 1, days: [1], time: '08:00' }], ['deleteRecurring', { supplierId: 1 }], ['saveOneOff', { supplierId: 1, ts: 9e12 }], ['deleteOneOff', { id: 'x' }], ['tickReminders', {}], ['testReminder', {}], ['exportBackup', {}], ['restorePreview', { data: {} }], ['restoreApply', { data: {} }], ['setChecked', { categoryId: null, checked: false }], ['setChecked', { categoryId: 1, checked: true }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
+    // daftar Stok adalah milik Bos: Karyawan hanya punya daftar pribadi (Penerimaan)
+    ['addItems', { categoryId: 1, text: 'x' }], ['toggleItem', { id: 'x' }], ['updateItem', { id: 'x', qty: 2 }], ['deleteItem', { id: 'x' }], ['reorderItems', { categoryId: 1, ids: [] }], ['saveCategory', { name: 'X' }],
+    ['receiptDecide', { id: 'x', approve: true }],
   ]) await rejects(s.call(ep, input), /Tidak punya akses/, ep);
 });
 
@@ -25,7 +28,7 @@ await t('pending ditolak untuk semuanya kecuali me', async () => {
   await rejects(s.call('addItems', { categoryId: 1, text: 'x' }), /Tidak punya akses/);
 });
 
-await t('worker tidak menerima field modal maupun supplier/riwayat', async () => {
+await t('Karyawan tidak pernah menerima daftar Bos, harga modal, supplier, atau riwayat', async () => {
   const storage = mem();
   const boss = new LocalStore('boss', storage);
   await boss.call('saveCategory', { name: 'Umum' });
@@ -38,10 +41,8 @@ await t('worker tidak menerima field modal maupun supplier/riwayat', async () =>
 
   const worker = new LocalStore('worker', storage);
   const d = await worker.call('getChanges', { since: 0 });
-  assert.equal(d.items.length, 1);
-  for (const f of ['isi', 'satuanHpp', 'hargaBeli', 'hargaJual']) assert.ok(!(f in d.items[0]), f);
-  assert.ok(!('suppliers' in d) && !('priceLog' in d));
-  assert.doesNotMatch(JSON.stringify(d), /48000|50000|6000/);
+  assert.deepEqual(Object.keys(d).sort(), ['receipts', 'serverTime', 'workerItems']);
+  assert.doesNotMatch(JSON.stringify(d), /Gula|48000|50000|6000|Umum/);
 });
 
 await t('delta since + tombstone mengalir ke state klien', async () => {
@@ -139,13 +140,12 @@ await t('setChecked/clearItems: peran, hitungan, dan jejak aktivitas', async () 
   assert.equal(d.items.filter((i) => i.checked).length, 2);
 
   const worker = new LocalStore('worker', storage);
-  assert.deepEqual(await worker.call('setChecked', { categoryId: null, checked: true }), { changed: 1 }, 'karyawan boleh centang semua');
-  await rejects(worker.call('setChecked', { categoryId: null, checked: false }), /Tidak punya akses/);
+  await rejects(worker.call('setChecked', { categoryId: null, checked: true }), /Tidak punya akses/, 'daftar Bos bukan milik karyawan');
   await rejects(worker.call('setChecked', { categoryId: 1, checked: true }), /Tidak punya akses/);
   await rejects(worker.call('clearItems', {}), /Tidak punya akses/);
 
-  // tiap LocalStore memuat storage sekali: buat ulang Bos agar melihat perubahan Karyawan
   const boss2 = new LocalStore('boss', storage);
+  assert.deepEqual(await boss2.call('setChecked', { categoryId: null, checked: true }), { changed: 1 });
   assert.deepEqual(await boss2.call('setChecked', { categoryId: null, checked: false }), { changed: 3 });
   assert.deepEqual(await boss2.call('clearItems', { categoryId: 2 }), { deleted: 1 });
   d = await boss2.call('getChanges', { since: 0 });
@@ -164,7 +164,7 @@ await t('lastAct untuk karyawan tidak membocorkan aksi supplier/harga', async ()
   await boss.call('savePrices', { supplierId: 1, tanggal: '2026-10-23', prices: [{ itemId: x, hargaBeli: 100 }] });
   assert.match((await boss.call('getChanges', {})).lastAct.desc, /RAHASIA/);
   const w = await new LocalStore('worker', storage).call('getChanges', {});
-  assert.equal(w.lastAct.desc, 'dicentang: X');
+  assert.ok(!('lastAct' in w), 'karyawan tidak menerima jejak aktivitas Bos');
   assert.doesNotMatch(JSON.stringify(w), /RAHASIA/);
 });
 

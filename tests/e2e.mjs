@@ -95,16 +95,15 @@ await step('Bos: centang, qty ± (minus beku di 1), numpad, satuan', async () =>
   await page.waitForFunction(() => [...document.querySelectorAll('.item-card')].find((e) => e.textContent.includes('Telur'))?.querySelector('.unit-btn').textContent.includes('btl'));
 });
 
-await step('Bos: Terima sebagian lalu penuh', async () => {
+await step('Bos: tidak ada tombol Terima per item (penerimaan lewat setoran karyawan)', async () => {
   await card('Aqua').locator('.chk').click();
   await page.waitForFunction(() => document.querySelectorAll('.item-card.checked').length === 2);
-  await card('Aqua').locator('.mini-btn:text("Terima")').click();
-  await calc('3');
-  await waitQty('Aqua', '6');
-  assert.ok(await isChecked('Aqua'), 'tetap tercentang');
-  await card('Aqua').locator('.mini-btn:text("Terima")').click();
-  await calc('6');
+  assert.equal(await page.locator('.mini-btn:text("Terima")').count(), 0);
+  await card('Aqua').locator('.chk').click();
   await page.waitForFunction(() => ![...document.querySelectorAll('.item-card')].find((e) => e.textContent.includes('Aqua')).classList.contains('checked'));
+  await card('Aqua').locator('.qty-disp').click();
+  await calc('6');
+  await waitQty('Aqua', '6');
 });
 
 await step('Bos: teks order + filter kategori (oc-chip, butuh >= 2 kategori)', async () => {
@@ -439,22 +438,79 @@ await step('Bos: PNL (proses, tabel, margin tertimbang, tambah hari, arsip + don
   await page.waitForSelector('.pn-subnav');
 });
 
-await step('Karyawan: tanpa sub-tab, tier, filter order, hapus, atau angka modal', async () => {
+await step('Penerimaan: Karyawan menempel pesanan, mengambil, menyetor; Bos mendapat notifikasi, meninjau, menyetujui', async () => {
+  // Bos menyiapkan dua barang yang dipesan (tercentang)
+  await page.goto(BASE + '?dev=boss');
+  await page.waitForSelector('.cat-tab.active');
+  await page.fill('[data-keep=add]', '6 dus Zeta\n2 kg Yoga');
+  await page.click('text=+ Tambah');
+  await page.waitForSelector('.item-card:has-text("Zeta")');
+  await card('Zeta').locator('.chk').click();
+  await card('Yoga').locator('.chk').click();
+  await page.waitForFunction(() => document.querySelectorAll('.item-card.checked').length >= 2);
+
+  // Karyawan: halaman Penerimaan saja, tanpa modul/sub-nav/modal
   await page.goto(BASE + '?dev=worker');
-  await page.waitForSelector('.item-card');
-  assert.equal(await page.locator('.pn-subnav').count(), 0);
-  assert.equal(await page.locator('.item-tier-badge').count(), 0);
-  assert.equal(await page.locator('.oc-chip').count(), 0);
-  assert.equal(await page.locator('.del-btn').count(), 0, 'hapus barang khusus Bos seperti app lama');
-  assert.equal(await page.locator('.drag-handle').count(), 0);
-  assert.equal(await page.locator('.sk-filterbar').count(), 0, 'filter tanggal khusus Bos');
-  assert.equal(await page.locator('.mod-tab').count(), 0, 'Nota khusus Bos');
-  assert.equal(await page.locator('.counter-line .mini-btn').count(), 0);
-  assert.equal(await page.locator('.btn:text("↺ Reset Semua Centang")').count(), 0);
-  assert.equal(await page.locator('.btn:text("🗑 Hapus Semua Item")').count(), 0);
-  assert.equal(await page.locator('.btn:text("☑ Centang Semua")').count(), 1, 'Centang Semua berlaku untuk kedua peran');
-  assert.doesNotMatch(await page.textContent('body'), /47\.500|5\.500|🏆/);
-  await shot('6-stok-karyawan');
+  await page.waitForSelector('.empty-title');
+  assert.match(await page.textContent('.empty-title'), /Belum ada barang/);
+  assert.equal(await page.locator('.mod-tab, .pn-subnav, .cat-bar, .item-tier-badge, .oc-chip, .del-btn, .drag-handle, .sk-filterbar').count(), 0);
+  assert.equal(await page.locator('#setor-btn').isDisabled(), true, 'Setor nonaktif tanpa centang');
+  await page.fill('[data-keep=add]', '5 dus Zeta\n3 kg Yoga\n1 pak Kopi');
+  await page.click('text=+ Tambah');
+  await page.waitForFunction(() => document.querySelectorAll('.item-card').length === 3);
+  assert.doesNotMatch(await page.textContent('body'), /Sembako|Aqua|47\.500|🏆/, 'daftar Bos tidak terlihat');
+  await card('Zeta').locator('.chk').click();
+  await card('Yoga').locator('.chk').click();
+  await card('Yoga').locator('.qty-disp').click();
+  await calc('2'); // diambil 2 dari 3
+  await page.waitForFunction(() => document.querySelectorAll('.item-card.checked').length === 2);
+  assert.match(await page.inputValue('.out-wrap textarea'), /5 dus Zeta\n2 kg Yoga/);
+  await shot('12-penerimaan-karyawan');
+  await page.click('#setor-btn');
+  await modalOk();
+  await page.waitForFunction(() => document.querySelectorAll('.item-card').length === 1);
+  assert.match(await page.textContent('.hist-item'), /2 barang[\s\S]*Menunggu Bos/);
+
+  // Bos: notifikasi, tinjau, setujui
+  await page.goto(BASE + '?dev=boss');
+  await page.waitForSelector('#receipt-banner');
+  assert.match(await page.textContent('#receipt-banner'), /1 setoran/);
+  assert.match(await page.textContent('.sub-btn:has-text("Penerimaan")'), /1/);
+  await page.click('#receipt-review');
+  await page.waitForSelector('#approve-btn');
+  const review = await page.textContent('.overlay .modal');
+  assert.match(review, /Zeta[\s\S]*kurang: sisa 1 dus/);
+  assert.match(review, /Yoga[\s\S]*terpenuhi/);
+  await shot('13-penerimaan-bos');
+  await page.click('#approve-btn');
+  await page.waitForFunction(() => !document.getElementById('receipt-banner'));
+  await page.click('.sub-btn:has-text("Checklist")');
+  await waitQty('Zeta', '1');
+  assert.ok(await isChecked('Zeta'), 'kurang: tetap tercentang');
+  assert.equal(await isChecked('Yoga'), false, 'terpenuhi: centang dilepas');
+
+  // Karyawan: setoran kedua ditolak -> barang kembali, tercentang
+  await page.goto(BASE + '?dev=worker');
+  await page.waitForSelector('.hist-item');
+  assert.match(await page.textContent('.hist-item'), /Disetujui[\s\S]*|Disetujui/);
+  await page.fill('[data-keep=add]', '1 dus Salah');
+  await page.click('text=+ Tambah');
+  await card('Salah').locator('.chk').click();
+  await page.click('#setor-btn');
+  await modalOk();
+  await page.waitForFunction(() => ![...document.querySelectorAll('.item-card')].some((e) => e.textContent.includes('Salah')));
+  await page.goto(BASE + '?dev=boss');
+  await page.click('#receipt-review');
+  await page.waitForSelector('#approve-btn');
+  assert.match(await page.textContent('.overlay .modal'), /Salah[\s\S]*tidak ada di daftar Bos/);
+  await page.click('.overlay .modal .btn.danger:text-is("Tolak")');
+  await page.fill('.overlay .modal input', 'Salah barang');
+  await page.click('.overlay .modal .btn.primary:text-is("Tolak")');
+  await page.waitForFunction(() => !document.getElementById('receipt-banner'));
+  await page.goto(BASE + '?dev=worker');
+  await page.waitForSelector('.item-card:has-text("Salah")');
+  assert.ok(await isChecked('Salah'), 'barang yang ditolak kembali tercentang');
+  assert.match(await page.textContent('.hist-item'), /Ditolak/);
 });
 
 await step('Menunggu persetujuan untuk peran pending', async () => {

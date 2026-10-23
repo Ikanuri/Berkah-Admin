@@ -4,7 +4,7 @@
 //
 // PERINGATAN: ini salinan manual dari logika endpoint. Kalau endpoint berubah,
 // file ini harus ikut diubah. Bukan sumber kebenaran dan bukan fallback produksi.
-import { makeId } from '../tgcloud/lib/id.js';
+import { makeId, validClientId } from '../tgcloud/lib/id.js';
 import { UNITS } from '../tgcloud/lib/units.js';
 import { shapeItemFor, canSeeSuppliers } from '../tgcloud/lib/shape.js';
 import { round } from '../tgcloud/lib/money.js';
@@ -14,6 +14,7 @@ import {
 } from '../tgcloud/lib/rules.js';
 import { latestActivity, visibleActivity } from '../tgcloud/lib/activity.js';
 import { makeBackup, parseBackup, planRestore, applyPlan } from '../tgcloud/lib/backup.js';
+import { planReceipt, cleanReceiptLines, mergeWorkerLine } from '../tgcloud/lib/receipts.js';
 import { cleanLines, notaNumber, packProducts, HIST_MAX } from '../tgcloud/lib/nota.js';
 import { processRaw, arsipOf, canonDate } from '../tgcloud/lib/pnl.js';
 import { parseProductsCSV } from '../tgcloud/lib/match.js';
@@ -36,6 +37,8 @@ export class LocalStore {
     this.db.remOneoff ??= [];
     this.db.sent ??= [];
     this.db.pnl ??= { days: {}, arsip: {} };
+    this.db.workerItems ??= [];
+    this.db.receipts ??= [];
     this.db.nota ??= { products: [], version: 0, learn: [], hist: [], seq: 0 };
     const now = Date.now();
     this.db.users = this.db.users.filter((u) => u.tgId !== ME);
@@ -107,8 +110,18 @@ export class LocalStore {
     const { since } = input;
     this.need('boss', 'worker');
     const s = Number(since) || 0;
+    if (this.role === 'worker') {
+      const wout = {
+        serverTime: Date.now(),
+        workerItems: this.db.workerItems.filter((r) => r.ownerId === ME && r.updatedAt > s),
+        receipts: this.db.receipts.filter((r) => r.workerId === ME && r.updatedAt > s),
+      };
+      if (input.tick) this.runTick();
+      return wout;
+    }
     const out = {
       serverTime: Date.now(),
+      receipts: this.db.receipts.filter((r) => (s === 0 ? (r.status === 'pending' || r.updatedAt > Date.now() - 30 * 86400000) : r.updatedAt > s)),
       categories: this.db.categories.filter((r) => r.updatedAt > s),
       items: this.db.items.filter((r) => r.updatedAt > s).map((r) => shapeItemFor(this.role, r)),
     };
@@ -133,8 +146,8 @@ export class LocalStore {
     return out;
   }
 
-  ep_addItems({ categoryId, text }) {
-    this.need('boss', 'worker');
+  ep_addItems({ categoryId, text, ids }) {
+    this.need('boss');
     const cat = this.category(categoryId);
     const lines = String(text ?? '').split('\n').map(parseLine).filter(Boolean);
     if (!lines.length) fail('Tidak ada baris valid');
@@ -142,13 +155,15 @@ export class LocalStore {
     const byName = new Map(existing.map((i) => [normName(i.name), i]));
     let next = existing.reduce((m, i) => Math.max(m, i.sortOrder), 0) + 1;
     const now = Date.now();
-    let added = 0, updated = 0;
+    const clientIds = Array.isArray(ids) ? ids : [];
+    let added = 0, updated = 0, k = 0;
     for (const line of lines) {
       const key = normName(line.name);
-      const m = mergeAddLine(byName.get(key), line, this.role === 'boss', now);
+      const m = mergeAddLine(byName.get(key), line, true, now);
       if (m.kind === 'new') {
+        const cid = clientIds[k++];
         const row = {
-          id: makeId(), categoryId: cat.id, name: line.name, qty: line.qty, unit: line.unit,
+          id: validClientId(cid) ? cid : makeId(), categoryId: cat.id, name: line.name, qty: line.qty, unit: line.unit,
           checked: false, checkedAt: null, sortOrder: next++, isi: null, satuanHpp: null,
           hargaBeli: null, hargaJual: null, updatedAt: now, deletedAt: null,
         };
@@ -165,7 +180,7 @@ export class LocalStore {
   }
 
   ep_updateItem(input) {
-    this.need('boss', 'worker');
+    this.need('boss');
     const it = this.item(input.id);
     const patch = {};
     if (typeof input.name === 'string') {
@@ -190,7 +205,7 @@ export class LocalStore {
   }
 
   ep_toggleItem({ id }) {
-    this.need('boss', 'worker');
+    this.need('boss');
     const it = this.item(id);
     const now = Date.now();
     const { patch } = toggle(it, now);
@@ -199,19 +214,8 @@ export class LocalStore {
     return { ok: true, ...patch };
   }
 
-  ep_fulfillItem({ id, received }) {
-    this.need('boss', 'worker');
-    const it = this.item(id);
-    const now = Date.now();
-    const r = fulfill(it, received, now);
-    if (!r) fail('Jumlah diterima harus lebih dari 0');
-    this.log('fulfill', { id: it.id, name: it.name, received: Number(received), status: r.status });
-    Object.assign(it, r.patch, { updatedAt: now });
-    return { ok: true, status: r.status, ...r.patch };
-  }
-
   ep_deleteItem({ id }) {
-    this.need('boss', 'worker');
+    this.need('boss');
     const it = this.item(id);
     const now = Date.now();
     this.log('deleteItem', { id: it.id, name: it.name });
@@ -220,7 +224,7 @@ export class LocalStore {
   }
 
   ep_reorderItems({ categoryId, ids }) {
-    this.need('boss', 'worker');
+    this.need('boss');
     const now = Date.now();
     (ids || []).forEach((id, i) => {
       const it = this.item(id);
@@ -230,7 +234,7 @@ export class LocalStore {
   }
 
   ep_saveCategory({ id, name, excludeFromOrder }) {
-    this.need('boss', 'worker');
+    this.need('boss');
     const all = this.db.categories.filter((c) => !c.deletedAt);
     const n = typeof name === 'string' ? name.trim() : null;
     if (n != null && !n) fail('Nama kategori kosong');
@@ -276,7 +280,7 @@ export class LocalStore {
   ep_setChecked({ categoryId, checked }) {
     const target = !!checked;
     const allCats = categoryId == null;
-    this.need(...(allCats && target ? ['boss', 'worker'] : ['boss']));
+    this.need('boss');
     const cat = allCats ? null : this.category(categoryId);
     const now = Date.now();
     let n = 0;
@@ -647,5 +651,118 @@ export class LocalStore {
     if (!d) fail('Tanggal tidak valid');
     delete this.db.pnl.arsip[d];
     return { ok: true };
+  }
+
+  // ── Penerimaan: daftar pribadi Karyawan + setoran (cermin tgcloud/endpoints/w*.js, receipt*.js) ──
+  ownItem(id) {
+    const it = this.db.workerItems.find((i) => i.id === id && i.ownerId === ME && !i.deletedAt);
+    if (!it) fail('Barang tidak ditemukan');
+    return it;
+  }
+
+  ep_wAddItems({ text, ids }) {
+    this.need('worker');
+    const lines = String(text ?? '').split('\n').map(parseLine).filter(Boolean);
+    if (!lines.length) fail('Tidak ada baris valid');
+    if (lines.length > 300) fail('Maksimal 300 baris sekali tempel');
+    const existing = this.db.workerItems.filter((i) => i.ownerId === ME && !i.deletedAt);
+    const byName = new Map(existing.map((i) => [normName(i.name), i]));
+    let next = existing.reduce((m, i) => Math.max(m, i.sortOrder), 0) + 1;
+    const now = Date.now();
+    const clientIds = Array.isArray(ids) ? ids : [];
+    let added = 0, updated = 0, k = 0;
+    for (const line of lines) {
+      const key = normName(line.name);
+      const m = mergeWorkerLine(byName.get(key), line, now);
+      if (m.kind === 'new') {
+        const cid = clientIds[k++];
+        const row = { id: validClientId(cid) ? cid : makeId(), ownerId: ME, name: line.name, qty: line.qty, unit: line.unit, checked: false, checkedAt: null, sortOrder: next++, updatedAt: now, deletedAt: null };
+        this.db.workerItems.push(row);
+        byName.set(key, row);
+        added++;
+      } else {
+        Object.assign(byName.get(key), m.patch, { updatedAt: now });
+        updated++;
+      }
+    }
+    return { added, updated };
+  }
+
+  ep_wUpdateItem(input) {
+    this.need('worker');
+    const it = this.ownItem(input.id);
+    const patch = {};
+    if (input.qty != null) { const q = setQty(input.qty); if (q == null) fail('Qty harus lebih dari 0'); patch.qty = q; }
+    else if (input.delta != null) patch.qty = adjustQty(it.qty, Number(input.delta));
+    if (input.unit != null) { if (!UNITS.includes(input.unit)) fail('Satuan tidak dikenal'); patch.unit = input.unit; }
+    if (!Object.keys(patch).length) return { ok: true };
+    Object.assign(it, patch, { updatedAt: Date.now() });
+    return { ok: true, ...patch };
+  }
+
+  ep_wToggleItem({ id }) {
+    this.need('worker');
+    const it = this.ownItem(id);
+    const now = Date.now();
+    const { patch } = toggle(it, now);
+    Object.assign(it, patch, { updatedAt: now });
+    return { ok: true, ...patch };
+  }
+
+  ep_wSetChecked({ checked }) {
+    this.need('worker');
+    const c = !!checked;
+    const now = Date.now();
+    let n = 0;
+    for (const it of this.db.workerItems) {
+      if (it.ownerId !== ME || it.deletedAt || it.checked === c) continue;
+      Object.assign(it, { checked: c, checkedAt: c ? now : null, updatedAt: now });
+      n++;
+    }
+    return { changed: n };
+  }
+
+  ep_receiptSubmit() {
+    this.need('worker');
+    const rows = this.db.workerItems.filter((i) => i.ownerId === ME && !i.deletedAt && i.checked).sort((a, b) => a.sortOrder - b.sortOrder);
+    if (!rows.length) fail('Tidak ada barang yang dicentang');
+    let lines;
+    try { lines = cleanReceiptLines(rows.map((r) => ({ name: r.name, qty: r.qty, unit: r.unit }))); } catch (e) { fail(e.message); }
+    const now = Date.now();
+    const me = this.db.users.find((u) => u.tgId === ME);
+    for (const r of rows) Object.assign(r, { deletedAt: now, updatedAt: now });
+    const id = makeId();
+    this.db.receipts.push({ id, workerId: ME, workerName: me ? me.name : String(ME), status: 'pending', lines, submittedAt: now, decidedAt: null, decidedBy: null, note: null, result: null, updatedAt: now });
+    this.log('receiptSubmit', { worker: me ? me.name : '', n: lines.length });
+    this.db.sent.push({ ts: now, text: `📥 Setoran dari ${me ? me.name : ''}: ${lines.length} barang.` });
+    return { id, count: lines.length, notified: 0 };
+  }
+
+  ep_receiptDecide({ id, approve, note }) {
+    this.need('boss');
+    const rc = this.db.receipts.find((r) => r.id === id);
+    if (!rc) fail('Setoran tidak ditemukan');
+    const now = Date.now();
+    const n = note ? String(note).trim().slice(0, 200) : null;
+    if (rc.status !== 'pending') fail('Setoran sudah diproses');
+    if (approve === true) {
+      const live = this.db.items.filter((i) => !i.deletedAt);
+      const plan = planReceipt(live, rc.lines, now);
+      Object.assign(rc, { status: 'approved', decidedAt: now, decidedBy: ME, note: n, result: { effects: plan.effects, unmatched: plan.unmatched, applied: true }, updatedAt: now });
+      for (const e of plan.effects) Object.assign(this.db.items.find((i) => i.id === e.id), e.patch, { updatedAt: now });
+      this.log('receiptApprove', { worker: rc.workerName, ...plan.counts });
+      return { status: 'approved', counts: plan.counts };
+    }
+    Object.assign(rc, { status: 'rejected', decidedAt: now, decidedBy: ME, note: n, updatedAt: now });
+    const own = this.db.workerItems.filter((i) => i.ownerId === rc.workerId && !i.deletedAt);
+    const byName = new Map(own.map((i) => [normName(i.name), i]));
+    let order = own.reduce((m, i) => Math.max(m, i.sortOrder), 0) + 1;
+    for (const l of rc.lines) {
+      const cur = byName.get(normName(l.name));
+      if (cur) Object.assign(cur, { qty: l.qty, unit: l.unit || cur.unit, checked: true, checkedAt: now, updatedAt: now });
+      else this.db.workerItems.push({ id: makeId(), ownerId: rc.workerId, name: l.name, qty: l.qty, unit: l.unit || 'dus', checked: true, checkedAt: now, sortOrder: order++, updatedAt: now, deletedAt: null });
+    }
+    this.log('receiptReject', { worker: rc.workerName, n: rc.lines.length });
+    return { status: 'rejected' };
   }
 }

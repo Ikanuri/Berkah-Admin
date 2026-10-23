@@ -1,5 +1,5 @@
 // Centang / batalkan massal. categoryId kosong = semua kategori.
-// Karyawan hanya boleh "centang semua"; sisanya khusus Bos (seperti app lama).
+// Khusus Bos. (Karyawan punya daftar sendiri: wSetChecked.)
 import { db, EndpointError } from 'sdk';
 import { eq, and, isNull } from 'sdk/db';
 import { items } from '../schema.js';
@@ -9,7 +9,7 @@ import { getCategory } from '../lib/store.js';
 export default async function (input, ctx) {
   const checked = !!input?.checked;
   const allCats = input?.categoryId == null;
-  const u = await requireRole(ctx, ...(allCats && checked ? ['boss', 'worker'] : ['boss']));
+  const u = await requireRole(ctx, 'boss');
   let cat = null;
   let where = isNull(items.deletedAt);
   if (!allCats) {

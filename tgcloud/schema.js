@@ -193,3 +193,40 @@ export const pnlArsip = table('pnl_arsip', {
 }, (t) => ({
   tglIdx: index('idx_pnl_arsip_tgl').on(t.tanggal),
 }));
+
+// Penerimaan: daftar pribadi tiap Karyawan (seperti halaman karyawan app lama: tempel
+// pesanan, centang = sudah diambil) dan setoran ke Bos. Daftar Bos (items) tidak pernah
+// dikirim ke Karyawan.
+export const workerItems = table('worker_items', {
+  id: text('id').primaryKey(),
+  ownerId: integer('owner_id').notNull(), // tgId karyawan pemilik
+  name: text('name').notNull(),
+  qty: real('qty').notNull().default(1),
+  unit: text('unit').notNull().default('dus'),
+  checked: boolean('checked').notNull().default(false), // true = sudah diambil
+  checkedAt: integer('checked_at'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at'),
+}, (t) => ({
+  ownerIdx: index('idx_worker_items_owner').on(t.ownerId, t.updatedAt),
+}));
+
+// Setoran = foto barang yang sudah diambil (nama, qty, satuan) saat tombol Setor ditekan.
+// Bos meninjau lalu menyetujui (mengurangi daftar Bos seperti "balasan" app lama) atau menolak.
+export const receipts = table('receipts', {
+  id: text('id').primaryKey(),
+  workerId: integer('worker_id').notNull(),
+  workerName: text('worker_name').notNull(),
+  status: text('status').notNull().default('pending'), // pending | approved | rejected
+  lines: json('lines').notNull(), // [{name, qty, unit}]
+  submittedAt: integer('submitted_at').notNull(),
+  decidedAt: integer('decided_at'),
+  decidedBy: integer('decided_by'),
+  note: text('note'),
+  result: json('result'), // rencana yang diterapkan saat disetujui: {effects:[{id,name,unit,taken,status,patch}], unmatched:[...], applied:boolean}
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => ({
+  updatedIdx: index('idx_receipts_updated').on(t.updatedAt),
+  workerIdx: index('idx_receipts_worker').on(t.workerId, t.updatedAt),
+}));

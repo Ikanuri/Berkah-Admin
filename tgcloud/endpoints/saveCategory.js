@@ -7,7 +7,7 @@ import { getCategory } from '../lib/store.js';
 import { normName } from '../lib/rules.js';
 
 export default async function (input, ctx) {
-  const u = await requireRole(ctx, 'boss', 'worker');
+  const u = await requireRole(ctx, 'boss');
   const all = await db.select().from(categories).where(isNull(categories.deletedAt)).all();
   const now = Date.now();
   const name = typeof input?.name === 'string' ? input.name.trim() : null;
