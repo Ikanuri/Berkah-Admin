@@ -382,6 +382,42 @@ await step('Bos: Nota Kulakan (impor CSV, cocok, koreksi, generate, simpan, riwa
   await page.waitForSelector('.pn-subnav');
 });
 
+await step('Bos: PNL (proses, tabel, margin tertimbang, tambah hari, arsip + donut, hapus)', async () => {
+  await page.click('.mod-tab[data-mod=pnl]');
+  await page.waitForSelector('#pn-raw');
+  await page.fill('#pn-raw', '#tanggal 2026-06-01\n#pengeluaran\n350000 Uang Indah\n#prive\n66200 Belanja\n#cash 5628000 + 190000 saldo\n#receh 21000\n#income 7497200\n#kulakan 5808330');
+  await page.click('#pn-process-btn');
+  await page.waitForSelector('#pn-tbl-harian');
+  assert.equal(await page.locator('#pn-tbl-harian tbody tr').count(), 2, '1 hari + TOTAL');
+  assert.match(await page.textContent('#pn-tbl-harian'), /5\.818\.000/, '#cash dijumlah');
+  await page.fill('#pn-raw', '#tanggal 2026-06-02\n#cash 4100000\n#receh 15000\n#income 5000000\n#kulakan 3900000');
+  await page.click('#pn-process-btn');
+  await page.waitForFunction(() => document.querySelectorAll('#pn-tbl-harian tbody tr').length === 3);
+  assert.match(await page.textContent('#pn-tbl-harian'), /7\.497\.200/, 'hari pertama tetap setelah proses hari kedua');
+  assert.equal(await page.locator('#pn-sum-cards .sum-card').count(), 8);
+  // margin performa tertimbang: gross 2.788.870 / income 12.497.200 = 22.3%
+  assert.match(await page.textContent('#pn-sum-cards'), /22,3%|22\.3%/);
+  await page.click('.tab-btn:text("Mingguan")');
+  assert.match(await page.textContent('#pn-tbl-mingguan'), /2026-W23/);
+  await page.click('.tab-btn:text("Rincian")');
+  assert.match(await page.textContent('#pn-tbl-rincian'), /Uang Indah/);
+  await shot('8-pnl');
+  await page.click('.sub-btn[data-view=arsip]');
+  await page.waitForSelector('#ar-donut');
+  assert.ok(await page.locator('#ar-donut path').count() >= 2, 'donut punya irisan');
+  assert.match(await page.textContent('#ar-table'), /Uang Indah[\s\S]*Belanja|Belanja[\s\S]*Uang Indah/);
+  await page.fill('#ar-search', 'uang');
+  await page.waitForFunction(() => !document.querySelector('#ar-table').textContent.includes('Belanja'));
+  await shot('9-pnl-arsip');
+  await page.click('.sub-btn[data-view=analisis]');
+  await page.click('.tab-btn:text("Harian")');
+  await page.locator('#pn-tbl-harian tbody tr').first().locator('.ar-del-date').dispatchEvent('click'); // tabel lebar
+  await modalOk();
+  await page.waitForFunction(() => document.querySelectorAll('#pn-tbl-harian tbody tr').length === 2);
+  await page.click('.mod-tab[data-mod=stok]');
+  await page.waitForSelector('.pn-subnav');
+});
+
 await step('Karyawan: tanpa sub-tab, tier, filter order, hapus, atau angka modal', async () => {
   await page.goto(BASE + '?dev=worker');
   await page.waitForSelector('.item-card');

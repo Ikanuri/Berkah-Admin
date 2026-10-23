@@ -10,11 +10,12 @@ import { renderHpp } from './views/hpp.js';
 import { renderSupplier } from './views/supplier.js';
 import { openSettings } from './views/settings.js';
 import { renderNota } from './views/nota.js';
+import { renderPnl } from './views/pnl.js';
 
 const app = document.getElementById('app');
 const state = createState();
 let view = 'checklist';
-let mod = 'stok'; // modul aktif: stok | nota (Nota khusus Bos)
+let mod = 'stok'; // modul aktif: stok | nota | pnl (Nota dan PNL khusus Bos)
 
 // Sub-tampilan modul Stok. HPP dan Supplier = harga modal, khusus Bos.
 const VIEWS = {
@@ -53,7 +54,7 @@ function shell() {
       h('div', { class: 'brand', title: 'Toko Berkah' },
         h('span', { class: 'brand-mark' }, '✳'),
         h('span', { class: 'brand-name' }, 'Toko ', h('em', {}, 'Berkah'))),
-      ctx.isBoss ? h('div', { class: 'mod-tabs' }, [['stok', 'Stok'], ['nota', 'Nota']].map(([k, label]) => h('button', {
+      ctx.isBoss ? h('div', { class: 'mod-tabs' }, [['stok', 'Stok'], ['nota', 'Nota'], ['pnl', 'PNL']].map(([k, label]) => h('button', {
         class: 'mod-tab' + (mod === k ? ' active' : ''), 'data-mod': k,
         onclick: () => { mod = k; render(); },
       }, h('span', { class: 'dot' }), label))) : null,
@@ -71,6 +72,7 @@ function shell() {
           h('span', {}, 'Diubah ', h('b', {}, relTime(state.lastAct.ts)), ' — ', state.lastAct.desc,
             state.lastAct.by ? h('span', { style: 'color:var(--ink4);' }, ' · ' + state.lastAct.by) : null)) : null,
         mod === 'nota' ? renderNota(ctx) : null,
+        mod === 'pnl' ? renderPnl(ctx) : null,
         mod === 'stok' && ctx.isBoss ? h('div', { class: 'pn-subnav' }, Object.entries(VIEWS).map(([key, v]) => h('button', {
           class: 'sub-btn' + (key === view ? ' active' : ''),
           onclick: () => { view = key; render(); },

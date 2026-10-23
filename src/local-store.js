@@ -15,6 +15,7 @@ import {
 import { latestActivity, visibleActivity } from '../tgcloud/lib/activity.js';
 import { makeBackup, parseBackup, planRestore, applyPlan } from '../tgcloud/lib/backup.js';
 import { cleanLines, notaNumber, packProducts, HIST_MAX } from '../tgcloud/lib/nota.js';
+import { processRaw, arsipOf, canonDate } from '../tgcloud/lib/pnl.js';
 import { parseProductsCSV } from '../tgcloud/lib/match.js';
 import { validateRecurring, validateOneOff, initialFired, planTick } from '../tgcloud/lib/reminders.js';
 
@@ -31,6 +32,7 @@ export class LocalStore {
     this.db.remRecurring ??= [];
     this.db.remOneoff ??= [];
     this.db.sent ??= [];
+    this.db.pnl ??= { days: {}, arsip: {} };
     this.db.nota ??= { products: [], version: 0, learn: [], hist: [], seq: 0 };
     const now = Date.now();
     this.db.users = this.db.users.filter((u) => u.tgId !== ME);
@@ -580,6 +582,47 @@ export class LocalStore {
     this.need('boss');
     const r = this.db.nota.hist.find((x) => x.id === id);
     if (r) { r.deletedAt = Date.now(); r.updatedAt = r.deletedAt; }
+    return { ok: true };
+  }
+
+  // ── PNL (khusus Bos) ──
+  ep_pnlGetAll() {
+    this.need('boss');
+    return { days: this.db.pnl.days, arsip: this.db.pnl.arsip };
+  }
+
+  ep_pnlProcess({ raw }) {
+    this.need('boss');
+    const text = typeof raw === 'string' ? raw : '';
+    if (!text.trim()) fail('Paste raw data dulu.');
+    const r = processRaw(text);
+    if (!r.bloks) fail('Tidak ada blok terdeteksi (mulai tiap hari dengan #tanggal YYYY-MM-DD).');
+    if (!r.days.length) fail('Tidak ada data valid.');
+    let arsipN = 0;
+    for (const { ds, data } of r.days) {
+      this.db.pnl.days[ds] = data;
+      const entries = arsipOf(data);
+      if (entries.length) this.db.pnl.arsip[ds] = entries; else delete this.db.pnl.arsip[ds];
+      arsipN += entries.length;
+    }
+    this.log('pnlProcess', { days: r.days.length });
+    return { saved: r.days.length, skipped: r.skipped, arsipN, preview: r.preview, total: Object.keys(this.db.pnl.days).length, days: this.db.pnl.days, arsip: this.db.pnl.arsip };
+  }
+
+  ep_pnlDeleteDay({ ds }) {
+    this.need('boss');
+    const d = canonDate(ds);
+    if (!d) fail('Tanggal tidak valid');
+    delete this.db.pnl.days[d];
+    return { ok: true };
+  }
+
+  ep_pnlDeleteArsip({ ds, all }) {
+    this.need('boss');
+    if (all === true) { this.db.pnl.arsip = {}; return { ok: true }; }
+    const d = canonDate(ds);
+    if (!d) fail('Tanggal tidak valid');
+    delete this.db.pnl.arsip[d];
     return { ok: true };
   }
 }

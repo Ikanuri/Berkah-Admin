@@ -1,0 +1,61 @@
+/* Modul PNL — disalin dari legacy/berkah-admin-1.5.0.html */
+/* ── PNL ── */
+.sum-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+@media(max-width:760px){.sum-cards{grid-template-columns:repeat(2,1fr);}}
+.sum-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:13px 14px 11px;}
+.sum-card.dark{background:var(--ink);border-color:var(--ink);}
+html[data-theme="dark"] .sum-card.dark{background:#1B1A19;}
+.sum-label{font-family:var(--mono);font-size:9px;letter-spacing:1.2px;color:var(--ink3);text-transform:uppercase;margin-bottom:5px;}
+.sum-card.dark .sum-label{color:rgba(250,249,245,.5);}
+.sum-val{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:-.4px;line-height:1.15;}
+.sum-card.dark .sum-val{color:#FAF9F5;}
+.sum-val.pos{color:var(--green);} .sum-val.neg{color:var(--red);} .sum-val.warn{color:var(--amber);}
+.sum-sub{font-size:10px;color:var(--ink4);margin-top:3px;font-family:var(--mono);}
+.sum-card.dark .sum-sub{color:rgba(250,249,245,.35);}
+.tab-bar{display:flex;gap:2px;background:var(--bg2);border:1px solid var(--border);border-radius:100px;padding:3px;width:fit-content;max-width:100%;overflow-x:auto;margin-bottom:12px;}
+.tab-btn{padding:6px 14px;border:none;border-radius:100px;background:transparent;font-size:12px;font-weight:600;color:var(--ink3);white-space:nowrap;transition:all .18s;}
+.tab-btn.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+.blok-preview{font-family:var(--mono);font-size:11px;line-height:2;color:var(--ink2);max-height:180px;overflow-y:auto;background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px;margin-top:10px;}
+
+/* ── ARSIP PNL + DONUT ── */
+.pn-subnav{display:flex;gap:2px;background:var(--bg2);border:1px solid var(--border);border-radius:100px;padding:3px;width:fit-content;margin-bottom:16px;}
+.pn-subnav .sub-btn{padding:7px 18px;border:none;border-radius:100px;background:transparent;font-size:12.5px;font-weight:600;color:var(--ink3);transition:all .18s;}
+.pn-subnav .sub-btn.active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow);}
+.ar-fltbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.ar-flt{padding:5px 13px;border-radius:100px;border:1px solid var(--border);background:var(--surface);font-size:11.5px;font-weight:600;color:var(--ink3);transition:all .15s;}
+.ar-flt.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.ar-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+@media(max-width:520px){.ar-stats{grid-template-columns:1fr 1fr;}}
+.ar-donut-flex{display:flex;gap:22px;align-items:center;flex-wrap:wrap;justify-content:center;}
+.ar-donut-wrap{position:relative;width:230px;height:230px;flex-shrink:0;}
+.ar-donut-wrap svg{width:100%;height:100%;display:block;}
+.ar-donut-wrap path{cursor:pointer;transition:opacity .18s;}
+.ar-center{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  pointer-events:none;text-align:center;
+}
+.ar-center-val{font-family:var(--serif);font-size:24px;font-weight:600;letter-spacing:-.5px;line-height:1.1;}
+.ar-center-lbl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--ink3);text-transform:uppercase;margin-top:3px;}
+.ar-legend{flex:1;min-width:210px;max-width:340px;display:flex;flex-direction:column;gap:2px;}
+.ar-leg-row{
+  display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:9px;
+  cursor:pointer;transition:background .15s, opacity .18s;border:none;background:transparent;text-align:left;width:100%;
+}
+.ar-leg-row:hover{background:var(--bg2);}
+.ar-leg-row.sel{background:var(--accent-dim);}
+.ar-leg-dot{width:11px;height:11px;border-radius:4px;flex-shrink:0;}
+.ar-leg-name{flex:1;font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.ar-leg-val{font-family:var(--mono);font-size:11.5px;color:var(--ink2);}
+.ar-leg-pct{font-family:var(--mono);font-size:10px;color:var(--ink3);width:42px;text-align:right;}
+.ar-detail{
+  margin-top:12px;padding:10px 14px;border-radius:var(--r-sm);background:var(--accent-dim);
+  border:1px solid var(--accent);font-size:12.5px;display:none;line-height:1.6;
+}
+.ar-detail.show{display:block;}
+.ar-date-row td{
+  background:var(--surface2);font-family:var(--mono);font-size:10.5px;font-weight:600;
+  color:var(--ink2);letter-spacing:.4px;padding:7px 10px;
+}
+

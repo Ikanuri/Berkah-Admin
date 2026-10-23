@@ -141,7 +141,7 @@ function openDropdown(ctx, i, trigger) {
   document.body.append(float);
   N.floatEl = float;
   paint('');
-  trigger.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); // pemicu bisa di luar layar pada tabel lebar
+  trigger.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' }); // pemicu bisa di luar layar pada tabel lebar
   const rect = trigger.getBoundingClientRect();
   const below = window.innerHeight - rect.bottom - 10;
   const above = rect.top - 10;

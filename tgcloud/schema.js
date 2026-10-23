@@ -163,3 +163,33 @@ export const notaSeq = table('nota_seq', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   ts: integer('ts').notNull(),
 });
+
+// PNL Analyzer (V4, khusus Bos). Tanggal = 'YYYY-MM-DD' (TEXT). Hari yang sama
+// diproses ulang = DIGANTI utuh; arsip per tanggal juga diganti utuh dan dihapus
+// secara independen dari pnl_days (perilaku app lama).
+export const pnlDays = table('pnl_days', {
+  tanggal: text('tanggal').primaryKey(),
+  income: real('income').notNull(),
+  kulakan: real('kulakan').notNull(),
+  cash: real('cash').notNull(),
+  receh: real('receh').notNull(),
+  totalPengeluaran: real('total_pengeluaran').notNull(),
+  totalPrive: real('total_prive').notNull(),
+  rincianPengeluaran: json('rincian_pengeluaran').notNull(),
+  rincianPrive: json('rincian_prive').notNull(),
+  gross: real('gross').notNull(),
+  netPos: real('net_pos').notNull(),
+  marginP: real('margin_p').notNull(),
+  marginC: real('margin_c').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const pnlArsip = table('pnl_arsip', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tanggal: text('tanggal').notNull(),
+  jenis: text('jenis').notNull(), // 'p' pengeluaran | 'v' prive
+  amt: real('amt').notNull(),
+  ket: text('ket').notNull(),
+}, (t) => ({
+  tglIdx: index('idx_pnl_arsip_tgl').on(t.tanggal),
+}));
