@@ -39,6 +39,7 @@ if [ "$FAILS" -eq 0 ]; then
   check "Skema DB sinkron" 'No schema changes' - -- npx tgcloud migrate --local --dry-run
   APP_ID=${TGCLOUD_TOKEN%%:*}   # token berformat app<id>:<secret>; hanya bagian id yang dipakai
   check "Mini App terlayani (https://${APP_ID}.tgcloud.ai/)" '<div id="app">' - -- curl -fsS --max-time 20 "https://${APP_ID}.tgcloud.ai/"
+  check "Versi offline terlayani (/berkah-offline.html)" 'MODE OFFLINE' - -- curl -fsS --max-time 30 "https://${APP_ID}.tgcloud.ai/berkah-offline.html"
   check "Smoke: endpoint me (peran Bos)" 'boss' - -- npx tgcloud run endpoints/me '{}' --ctx "$CTX"
   check "Smoke: endpoint getChanges" 'serverTime' - -- npx tgcloud run endpoints/getChanges '{ since: 0 }' --ctx "$CTX"
 fi
