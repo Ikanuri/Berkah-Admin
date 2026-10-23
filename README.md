@@ -13,8 +13,8 @@ Backend V1 dan frontend V1 sudah ada dan ter-deploy lewat GitHub Actions.
 
 Desain UI mengikuti app lama (`legacy/`): token warna ivory/arang + aksen crail, font Source Serif 4 /
 Inter / JetBrains Mono, topbar, panel, kartu barang, pil sub-navigasi, tabel HPP, modal, numpad, tema gelap.
-Belum diport dari UI lama: filter tanggal checklist, panel Balasan/Log, Centang Semua/Reset, Export Excel,
-tab Pengingat, donut ringkasan Supplier, seekbar, bottom-nav modul (baru ada satu modul).
+Belum diport dari UI lama: panel Balasan/Log (digantikan "Terima" per barang), Export Excel,
+donut ringkasan Supplier, seekbar, bottom-nav modul (baru ada satu modul).
 
 Belum ada: export/restore/import backup, pengingat (V2), Nota (V3), PNL (V4), mode offline satu file.
 

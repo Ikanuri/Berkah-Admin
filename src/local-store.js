@@ -14,6 +14,7 @@ import {
 } from '../tgcloud/lib/rules.js';
 import { latestActivity, visibleActivity } from '../tgcloud/lib/activity.js';
 import { makeBackup, parseBackup, planRestore, applyPlan } from '../tgcloud/lib/backup.js';
+import { validateRecurring, validateOneOff, initialFired, planTick } from '../tgcloud/lib/reminders.js';
 
 const KEY = 'berkah-dev-db';
 const ME = 1;
@@ -25,6 +26,9 @@ export class LocalStore {
     this.storage = storage;
     this.role = role;
     this.db = this.load();
+    this.db.remRecurring ??= [];
+    this.db.remOneoff ??= [];
+    this.db.sent ??= [];
     const now = Date.now();
     this.db.users = this.db.users.filter((u) => u.tgId !== ME);
     this.db.users.push({ tgId: ME, name: 'Anda (dev)', username: null, role, createdAt: now, updatedAt: now });
@@ -39,6 +43,7 @@ export class LocalStore {
     const now = Date.now();
     return {
       categories: [], items: [], suppliers: [], priceLog: [], activity: [], seq: { cat: 0, sup: 0 },
+      remRecurring: [], remOneoff: [], sent: [], // sent: pesan yang akan dikirim ke Telegram (dev: hanya dicatat)
       users: [
         { tgId: 2, name: 'Siti (karyawan)', username: 'siti', role: 'worker', createdAt: now, updatedAt: now },
         { tgId: 3, name: 'Budi (menunggu)', username: null, role: 'pending', createdAt: now, updatedAt: now },
@@ -85,7 +90,8 @@ export class LocalStore {
     return { tgId: u.tgId, name: u.name, role: u.role };
   }
 
-  ep_getChanges({ since }) {
+  ep_getChanges(input) {
+    const { since } = input;
     this.need('boss', 'worker');
     const s = Number(since) || 0;
     const out = {
@@ -96,6 +102,14 @@ export class LocalStore {
     if (canSeeSuppliers(this.role)) {
       out.suppliers = this.db.suppliers.filter((r) => r.updatedAt > s);
       out.priceLog = this.db.priceLog.filter((r) => r.updatedAt > s);
+    }
+    if (canSeeSuppliers(this.role)) {
+      out.remRecurring = this.db.remRecurring.filter((r) => r.updatedAt > s);
+      out.remOneoff = this.db.remOneoff.filter((r) => r.updatedAt > s);
+    }
+    if (input.tick) {
+      const t = this.runTick();
+      if (this.role === 'boss' && t.fired.length) out.alerts = t.fired;
     }
     const recent = this.db.activity.slice(-30).reverse();
     const last = latestActivity(visibleActivity(this.role, recent));
@@ -308,6 +322,8 @@ export class LocalStore {
     const data = makeBackup({
       categories: d.categories.filter((c) => !c.deletedAt), items: d.items.filter((i) => !i.deletedAt),
       suppliers: d.suppliers, priceLog: d.priceLog.filter((e) => !e.deletedAt),
+      remRecurring: d.remRecurring.filter((r) => !r.deletedAt),
+      remOneoff: d.remOneoff.filter((o) => !o.deletedAt && !o.firedAt),
     });
     const counts = { categories: data.tables.categories.length, items: data.tables.items.length, suppliers: data.tables.suppliers.length, priceLog: data.tables.priceLog.length };
     return { sent: false, filename: 'berkah-dev.json', counts, data };
@@ -321,6 +337,7 @@ export class LocalStore {
     const mode = onConflict === 'overwrite' ? 'overwrite' : 'keep';
     const plan = planRestore({
       categories: d.categories, suppliers: d.suppliers, items: d.items, priceLogIds: d.priceLog.map((e) => e.id),
+      remRecurring: d.remRecurring, remOneoffIds: d.remOneoff.map((o) => o.id),
     }, parsed.incoming, { onConflict: mode });
     return { parsed, plan, mode };
   }
@@ -342,9 +359,77 @@ export class LocalStore {
       insertItems: async (rows) => rows.forEach((r) => d.items.push({ ...r, checkedAt: r.checked ? (r.checkedAt ?? now) : null, updatedAt: now, deletedAt: null })),
       updateItem: async (id, patch) => Object.assign(d.items.find((i) => i.id === id), patch, { updatedAt: now }),
       insertLogs: async (rows) => rows.forEach((r) => d.priceLog.push({ ...r, createdBy: null, updatedAt: now, deletedAt: null })),
+      upsertRecurring: async (r) => {
+        const i = d.remRecurring.findIndex((x) => x.supplierId === r.supplierId);
+        const row = { ...r, updatedAt: now, deletedAt: null };
+        if (i >= 0) d.remRecurring[i] = row; else d.remRecurring.push(row);
+      },
+      insertOneOffs: async (rows) => rows.forEach((o) => d.remOneoff.push({ ...o, updatedAt: now, deletedAt: null })),
     });
     this.log('restore', { format: parsed.format, onConflict: mode, counts: plan.counts });
     return { format: parsed.format, warnings: parsed.warnings, onConflict: mode, counts: plan.counts };
+  }
+
+  // ── pengingat supplier ──
+  runTick(now = Date.now()) {
+    const d = this.db;
+    const name = (id) => { const s = d.suppliers.find((x) => x.id === id); return s && !s.deletedAt ? s.name : null; };
+    const claims = planTick({
+      recurring: d.remRecurring.filter((r) => !r.deletedAt),
+      oneOff: d.remOneoff.filter((o) => !o.deletedAt && !o.firedAt),
+      supplierName: name,
+    }, now);
+    const fired = [];
+    for (const c of claims) {
+      // klaim bersyarat, sama seperti UPDATE ... WHERE di server
+      const rec = c.supplierId != null ? d.remRecurring.find((r) => r.supplierId === c.supplierId && !r.deletedAt) : null;
+      const one = c.id != null ? d.remOneoff.find((o) => o.id === c.id && !o.deletedAt) : null;
+      let ok = false;
+      if (c.type === 'rec-pre' && rec && rec.lastPreFiredDate !== c.date) { rec.lastPreFiredDate = c.date; rec.updatedAt = now; ok = true; }
+      else if (c.type === 'rec-on' && rec && rec.lastFiredDate !== c.date) { rec.lastFiredDate = c.date; rec.updatedAt = now; ok = true; }
+      else if (c.type === 'once-pre' && one && !one.preFiredAt && !one.firedAt) { one.preFiredAt = now; one.updatedAt = now; ok = true; }
+      else if (c.type === 'once-on' && one && !one.firedAt) { one.firedAt = now; one.updatedAt = now; ok = true; }
+      if (ok) { fired.push(c.message); d.sent.push({ ts: now, text: c.message }); }
+    }
+    return { fired, delivered: fired.length, failed: 0 };
+  }
+
+  ep_tickReminders({ send } = {}) { this.need('boss'); void send; return this.runTick(); }
+  ep_testReminder() { this.need('boss'); return { sent: false, reason: 'mode dev: tidak ada Telegram' }; }
+
+  ep_saveRecurring(input) {
+    this.need('boss');
+    const sup = this.supplier(input.supplierId);
+    let spec;
+    try { spec = validateRecurring(input); } catch (e) { fail(e.message); }
+    const now = Date.now();
+    const row = { supplierId: sup.id, ...spec, ...initialFired(spec, now), updatedAt: now, deletedAt: null };
+    const i = this.db.remRecurring.findIndex((r) => r.supplierId === sup.id);
+    if (i >= 0) this.db.remRecurring[i] = row; else this.db.remRecurring.push(row);
+    return { ok: true };
+  }
+
+  ep_deleteRecurring({ supplierId }) {
+    this.need('boss');
+    const r = this.db.remRecurring.find((x) => x.supplierId === supplierId);
+    if (r) Object.assign(r, { deletedAt: Date.now(), updatedAt: Date.now() });
+    return { ok: true };
+  }
+
+  ep_saveOneOff(input) {
+    this.need('boss');
+    const sup = this.supplier(input.supplierId);
+    let spec;
+    try { spec = validateOneOff(input); } catch (e) { fail(e.message); }
+    this.db.remOneoff.push({ id: makeId(), supplierId: sup.id, ...spec, firedAt: null, preFiredAt: null, updatedAt: Date.now(), deletedAt: null });
+    return { ok: true };
+  }
+
+  ep_deleteOneOff({ id }) {
+    this.need('boss');
+    const o = this.db.remOneoff.find((x) => x.id === id);
+    if (o) Object.assign(o, { deletedAt: Date.now(), updatedAt: Date.now() });
+    return { ok: true };
   }
 
   ep_saveSupplier({ id, name }) {
@@ -367,7 +452,10 @@ export class LocalStore {
   ep_deleteSupplier({ id }) {
     this.need('boss');
     const now = Date.now();
-    Object.assign(this.supplier(id), { deletedAt: now, updatedAt: now });
+    const sup = this.supplier(id);
+    Object.assign(sup, { deletedAt: now, updatedAt: now });
+    this.db.remRecurring.filter((r) => r.supplierId === sup.id).forEach((r) => Object.assign(r, { deletedAt: now, updatedAt: now }));
+    this.db.remOneoff.filter((o) => o.supplierId === sup.id).forEach((o) => Object.assign(o, { deletedAt: now, updatedAt: now }));
     return { ok: true };
   }
 

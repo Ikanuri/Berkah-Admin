@@ -4,6 +4,7 @@ import {
   itemsOf, suppliersOf, supplierName, logOf, rankedOf, tierOf,
 } from '../state.js';
 import { catBar, searchBox, panel, ensureActiveCat, today } from './shared.js';
+import { renderReminders } from './reminders.js';
 
 // Draft: selamat dari render ulang (polling).
 const draft = { view: 'input', supplierId: null, tanggal: today(), prices: {}, search: '', open: new Set() };
@@ -138,6 +139,7 @@ export function renderSupplier(ctx) {
   return h('div', {},
     h('div', { class: 'pn-subnav' },
       h('button', { class: 'sub-btn' + (draft.view === 'input' ? ' active' : ''), onclick: () => { draft.view = 'input'; ctx.render(); } }, '📥 Input Harga'),
-      h('button', { class: 'sub-btn' + (draft.view === 'analisis' ? ' active' : ''), onclick: () => { draft.view = 'analisis'; ctx.render(); } }, '📊 Analisis')),
-    draft.view === 'input' ? inputView(ctx) : analysisView(ctx));
+      h('button', { class: 'sub-btn' + (draft.view === 'analisis' ? ' active' : ''), onclick: () => { draft.view = 'analisis'; ctx.render(); } }, '📊 Analisis'),
+      h('button', { class: 'sub-btn' + (draft.view === 'pengingat' ? ' active' : ''), onclick: () => { draft.view = 'pengingat'; ctx.render(); } }, '🔔 Pengingat')),
+    draft.view === 'input' ? inputView(ctx) : draft.view === 'analisis' ? analysisView(ctx) : renderReminders(ctx));
 }

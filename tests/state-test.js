@@ -1,6 +1,6 @@
 // Uji state klien murni. Jalankan: node tests/state-test.js
 import assert from 'node:assert/strict';
-import { createState, applyChanges, inRange, buildOrderText, relTime, dayStr } from '../src/state.js';
+import { createState, applyChanges, inRange, buildOrderText, relTime, dayStr, recurringOf, oneOffsOf } from '../src/state.js';
 
 let n = 0;
 const t = (name, fn) => { fn(); n++; console.log('✓', name); };
@@ -70,6 +70,26 @@ t('applyChanges: lastAct dan baris lebih lama diabaikan', () => {
   assert.equal(st.items.get('a').name, 'baru');
   assert.equal(st.lastAct.desc, 'x');
   assert.equal(dayStr(NOW), '2026-10-23');
+});
+
+t('pengingat: kunci supplierId, tombstone, sekali-jadwal terurut & hanya yang menunggu', () => {
+  const st = createState();
+  applyChanges(st, {
+    remRecurring: [{ supplierId: 7, days: [1], time: '08:00', updatedAt: 5, deletedAt: null }],
+    remOneoff: [
+      { id: 'b', supplierId: 7, ts: 200, firedAt: null, updatedAt: 1, deletedAt: null },
+      { id: 'a', supplierId: 7, ts: 100, firedAt: null, updatedAt: 1, deletedAt: null },
+      { id: 'c', supplierId: 7, ts: 50, firedAt: 60, updatedAt: 1, deletedAt: null },
+      { id: 'd', supplierId: 7, ts: 300, firedAt: null, updatedAt: 1, deletedAt: 9 },
+    ],
+  });
+  assert.equal(recurringOf(st, 7).time, '08:00');
+  assert.equal(recurringOf(st, 8), null);
+  assert.deepEqual(oneOffsOf(st).map((o) => o.id), ['a', 'b']);
+  applyChanges(st, { remRecurring: [{ supplierId: 7, days: [1], time: '08:00', updatedAt: 6, deletedAt: 6 }] });
+  assert.equal(recurringOf(st, 7), null, 'tombstone menyembunyikan jadwal');
+  applyChanges(st, { alerts: ['x', 'y'] });
+  assert.deepEqual(st.alerts, ['x', 'y']);
 });
 
 console.log(`\nHASIL: ${n} uji state lulus`);

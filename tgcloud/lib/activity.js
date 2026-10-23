@@ -48,7 +48,7 @@ export function latestActivity(rows) {
 // Aksi yang menyentuh harga modal / supplier / pengguna: tidak boleh terlihat Karyawan.
 export const BOSS_ONLY_ACTIONS = new Set([
   'savePrices', 'applyMargin', 'setHpp', 'deletePriceEntry',
-  'addSupplier', 'renameSupplier', 'deleteSupplier', 'setUserRole', 'restore', 'exportBackup',
+  'addSupplier', 'renameSupplier', 'deleteSupplier', 'setUserRole', 'restore', 'exportBackup', 'saveRecurring', 'saveOneOff',
 ]);
 
 export function visibleActivity(role, rows) {

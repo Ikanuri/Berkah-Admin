@@ -89,6 +89,14 @@ jobs:
           echo "$out"
           [ $rc -eq 0 ] && grep -q "idempotent" <<<"$out"
 
+      - name: Uji klaim pengingat di database cloud (data sementara, tanpa kirim pesan)
+        run: |
+          cp scripts/ci/cloud-reminder-test.js tgcloud/endpoints/zzCloudReminderTest.js
+          out=$(npx tgcloud run endpoints/zzCloudReminderTest '{}' 2>&1); rc=$?
+          rm -f tgcloud/endpoints/zzCloudReminderTest.js
+          echo "$out"
+          [ $rc -eq 0 ] && grep -q "raceWinners" <<<"$out"
+
       - name: Diagnosa pasca-deploy
         run: scripts/ci/diagnose.sh
 

@@ -83,3 +83,32 @@ export const activityLog = table('activity_log', {
 }, (t) => ({
   tsIdx: index('idx_activity_ts').on(t.ts),
 }));
+
+// Pengingat kedatangan supplier (V2). Satu jadwal mingguan per supplier; jadwal
+// sekali-jadwal boleh banyak. Kolom last_* / *_at dipakai sebagai "klaim" agar
+// satu kejadian hanya dikirim sekali walau dua tick berjalan bersamaan.
+export const remRecurring = table('reminders_recurring', {
+  supplierId: integer('supplier_id').primaryKey(),
+  days: json('days').notNull(),                 // [0..6], 0 = Minggu
+  time: text('time').notNull(),                 // 'HH:MM' jam toko
+  preAlertMin: integer('pre_alert_min'),
+  lastFiredDate: text('last_fired_date'),
+  lastPreFiredDate: text('last_pre_fired_date'),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at'),
+}, (t) => ({
+  updatedIdx: index('idx_rem_rec_updated').on(t.updatedAt),
+}));
+
+export const remOneoff = table('reminders_oneoff', {
+  id: text('id').primaryKey(),
+  supplierId: integer('supplier_id').notNull(),
+  ts: integer('ts').notNull(),
+  preAlertMin: integer('pre_alert_min'),
+  firedAt: integer('fired_at'),
+  preFiredAt: integer('pre_fired_at'),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at'),
+}, (t) => ({
+  updatedIdx: index('idx_rem_once_updated').on(t.updatedAt),
+}));

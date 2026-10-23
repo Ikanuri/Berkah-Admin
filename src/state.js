@@ -10,6 +10,9 @@ export function createState() {
     items: new Map(),
     suppliers: new Map(),
     priceLog: new Map(),
+    remRecurring: new Map(), // kunci: supplierId
+    remOneoff: new Map(),
+    alerts: [],              // pesan pengingat yang baru dibunyikan (untuk spanduk)
     serverTime: 0,
     activeCat: null,
     lastAct: null,
@@ -17,17 +20,19 @@ export function createState() {
   };
 }
 
-const TABLES = { categories: 'categories', items: 'items', suppliers: 'suppliers', priceLog: 'priceLog' };
+// tabel -> nama kolom kunci
+const TABLES = { categories: 'id', items: 'id', suppliers: 'id', priceLog: 'id', remRecurring: 'supplierId', remOneoff: 'id' };
 
 // Terapkan balasan getChanges. Mengembalikan true bila ada baris yang berubah.
 export function applyChanges(state, delta) {
   let changed = false;
-  for (const key of Object.keys(TABLES)) {
+  for (const [key, idField] of Object.entries(TABLES)) {
     for (const row of delta[key] || []) {
-      const cur = state[key].get(row.id);
-      if (!cur || row.updatedAt >= cur.updatedAt) { state[key].set(row.id, row); changed = true; }
+      const cur = state[key].get(row[idField]);
+      if (!cur || row.updatedAt >= cur.updatedAt) { state[key].set(row[idField], row); changed = true; }
     }
   }
+  if (delta.alerts?.length) { state.alerts.push(...delta.alerts); changed = true; }
   if (delta.serverTime) state.serverTime = delta.serverTime;
   if ('lastAct' in delta) { state.lastAct = delta.lastAct; changed = true; }
   return changed;
@@ -48,6 +53,16 @@ export function supplierName(state, id) {
   const s = state.suppliers.get(id);
   return s ? s.name : '(dihapus)';
 }
+// Jadwal mingguan hidup untuk satu supplier (atau null).
+export function recurringOf(state, supplierId) {
+  const r = state.remRecurring.get(supplierId);
+  return r && !r.deletedAt ? r : null;
+}
+// Sekali-jadwal yang masih menunggu (belum berbunyi), terdekat dulu.
+export function oneOffsOf(state) {
+  return [...state.remOneoff.values()].filter((o) => !o.deletedAt && !o.firedAt).sort((a, b) => a.ts - b.ts);
+}
+
 export function logOf(state, itemId) {
   return live(state.priceLog).filter((e) => e.itemId === itemId).sort((a, b) => b.ts - a.ts);
 }

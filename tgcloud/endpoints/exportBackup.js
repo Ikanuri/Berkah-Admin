@@ -3,8 +3,8 @@
 // tidak andal untuk unduhan blob). Bila gagal (mis. Bos belum /start bot),
 // balas JSON-nya supaya klien bisa mencoba unduh langsung.
 import { db, api, InputFile } from 'sdk';
-import { isNull } from 'sdk/db';
-import { categories, items, suppliers, priceLog } from '../schema.js';
+import { isNull, and } from 'sdk/db';
+import { categories, items, suppliers, priceLog, remRecurring, remOneoff } from '../schema.js';
 import { requireRole, logActivity } from '../lib/auth.js';
 import { makeBackup } from '../lib/backup.js';
 
@@ -18,6 +18,8 @@ export default async function (input, ctx) {
     items: await db.select().from(items).where(isNull(items.deletedAt)).all(),
     suppliers: await db.select().from(suppliers).all(),
     priceLog: await db.select().from(priceLog).where(isNull(priceLog.deletedAt)).all(),
+    remRecurring: await db.select().from(remRecurring).where(isNull(remRecurring.deletedAt)).all(),
+    remOneoff: await db.select().from(remOneoff).where(and(isNull(remOneoff.deletedAt), isNull(remOneoff.firedAt))).all(),
   }, now);
   const d = new Date(now + 7 * 3600000); // nama file memakai tanggal zona toko (WIB)
   const filename = `berkah-${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}.json`;

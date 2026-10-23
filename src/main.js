@@ -41,6 +41,10 @@ function shell() {
   if (!VIEWS[view] || (VIEWS[view].boss && !ctx.isBoss)) view = 'checklist';
   const [roleCls, roleLbl] = ROLE[state.me.role];
   return h('div', {},
+    state.alerts.length ? h('div', { id: 'remind-banner' },
+      h('span', { class: 'srb-ico' }, '🔔'),
+      h('div', { class: 'srb-msg' }, state.alerts.join('\n')),
+      h('button', { class: 'srb-close', onclick: () => { state.alerts.length = 0; render(); } }, 'Tutup')) : null,
     m.kind === 'dev' ? h('div', { class: 'dev-banner' }, `MODE DEV · data lokal browser · peran: ${m.role}`) : null,
     h('div', { class: 'topbar' }, h('div', { class: 'topbar-inner' },
       h('div', { class: 'brand', title: 'Toko Berkah' },
@@ -56,8 +60,9 @@ function shell() {
           h('span', { style: 'font-family:var(--serif);font-style:italic;font-size:14px;color:var(--ink3);' }, dateLabel()),
           h('span', { class: roleCls }, roleLbl)),
         state.lastAct ? h('div', { class: 'sk-lastact' },
-          h('span', { class: 'sk-la-dot' }), 'Diubah ', h('b', {}, relTime(state.lastAct.ts)), ' — ', state.lastAct.desc,
-          state.lastAct.by ? h('span', { style: 'color:var(--ink4);' }, ' · ' + state.lastAct.by) : null) : null,
+          h('span', { class: 'sk-la-dot' }),
+          h('span', {}, 'Diubah ', h('b', {}, relTime(state.lastAct.ts)), ' — ', state.lastAct.desc,
+            state.lastAct.by ? h('span', { style: 'color:var(--ink4);' }, ' · ' + state.lastAct.by) : null)) : null,
         ctx.isBoss ? h('div', { class: 'pn-subnav' }, Object.entries(VIEWS).map(([key, v]) => h('button', {
           class: 'sub-btn' + (key === view ? ' active' : ''),
           onclick: () => { view = key; render(); },

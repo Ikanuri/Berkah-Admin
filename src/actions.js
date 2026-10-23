@@ -7,13 +7,14 @@ import { toast } from './dom.js';
 export function createSync(state, onChange) {
   let busy = false;
   let timer = null;
+  let polls = 0; // tick pengingat tiap ~15 poll (~1 menit); poll pertama langsung
 
   async function refresh() {
     if (busy) return;
     busy = true;
     try {
       const since = state.serverTime ? state.serverTime - 2000 : 0;
-      const delta = await call('getChanges', { since });
+      const delta = await call('getChanges', { since, tick: polls++ % 15 === 0 });
       if (applyChanges(state, delta)) onChange();
     } catch (e) {
       toast(e.message);

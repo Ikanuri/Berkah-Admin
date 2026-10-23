@@ -1,6 +1,7 @@
 // Uji kontrak LocalStore (peran & bentuk respons). Jalankan: node tests/local-store-test.js
 import assert from 'node:assert/strict';
 import { LocalStore } from '../src/local-store.js';
+import { shopMs } from '../tgcloud/lib/time.js';
 import { createState, applyChanges, categoriesOf, itemsOf, tierOf, buildOrderText } from '../src/state.js';
 
 const mem = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; };
@@ -13,7 +14,7 @@ await t('worker ditolak untuk endpoint Bos', async () => {
   for (const [ep, input] of [
     ['setHpp', { id: 'x' }], ['saveSupplier', { name: 'A' }], ['deleteSupplier', { id: 1 }],
     ['savePrices', {}], ['deletePriceEntry', { id: 'x' }], ['listUsers', {}],
-    ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['clearItems', {}], ['exportBackup', {}], ['restorePreview', { data: {} }], ['restoreApply', { data: {} }], ['setChecked', { categoryId: null, checked: false }], ['setChecked', { categoryId: 1, checked: true }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
+    ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['clearItems', {}], ['saveRecurring', { supplierId: 1, days: [1], time: '08:00' }], ['deleteRecurring', { supplierId: 1 }], ['saveOneOff', { supplierId: 1, ts: 9e12 }], ['deleteOneOff', { id: 'x' }], ['tickReminders', {}], ['testReminder', {}], ['exportBackup', {}], ['restorePreview', { data: {} }], ['restoreApply', { data: {} }], ['setChecked', { categoryId: null, checked: false }], ['setChecked', { categoryId: 1, checked: true }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
   ]) await rejects(s.call(ep, input), /Tidak punya akses/, ep);
 });
 
@@ -189,6 +190,70 @@ await t('exportBackup + restoreApply lewat LocalStore: bulat-balik antar perangk
   assert.equal(d.priceLog.length, 1);
   assert.match(d.lastAct.desc, /^restore backup \(pertahankan\): \+2 barang/);
   await rejects(b.call('restorePreview', { data: { foo: 1 } }), /Format backup tidak dikenal/);
+});
+
+await t('pengingat: simpan, validasi, tick tanpa ganda, spanduk hanya Bos, supplier terhapus', async () => {
+  const storage = mem();
+  const boss = new LocalStore('boss', storage);
+  await boss.call('saveSupplier', { name: 'Agen A' });
+  await boss.call('saveSupplier', { name: 'Agen B' });
+  await rejects(boss.call('saveRecurring', { supplierId: 1, days: [], time: '08:00' }), /minimal satu hari/);
+  await rejects(boss.call('saveRecurring', { supplierId: 99, days: [1], time: '08:00' }), /Supplier tidak ditemukan/);
+  await rejects(boss.call('saveOneOff', { supplierId: 1, ts: 1000 }), /sudah lewat/);
+  await boss.call('saveRecurring', { supplierId: 1, days: [4, 1], time: '08:00', preAlertMin: 30 });
+  await boss.call('saveRecurring', { supplierId: 1, days: [2], time: '09:30' }); // upsert: satu jadwal per supplier
+  assert.equal(boss.db.remRecurring.length, 1);
+  assert.deepEqual([boss.db.remRecurring[0].days, boss.db.remRecurring[0].time, boss.db.remRecurring[0].preAlertMin], [[2], '09:30', null]);
+
+  // atur ulang ke jadwal yang pasti jatuh tempo pada "sekarang" tetap: Kamis 22 Okt 2026 08:00 WIB
+  const THU_8 = shopMs('2026-10-22', '08:00');
+  Object.assign(boss.db.remRecurring[0], { days: [4], time: '08:00', preAlertMin: 30, lastFiredDate: null, lastPreFiredDate: null });
+  const soon = { id: 'once1', supplierId: 2, ts: THU_8 + 3600000, preAlertMin: 15, firedAt: null, preFiredAt: null, updatedAt: 1, deletedAt: null };
+  boss.db.remOneoff.push(soon);
+
+  let r = boss.runTick(THU_8 - 20 * 60000);
+  assert.deepEqual(r.fired, ['⏰ Supplier "Agen A" dijadwalkan datang sebentar lagi (08:00)'], 'pra-alert mingguan');
+  assert.deepEqual(boss.runTick(THU_8 - 19 * 60000).fired, [], 'tidak ganda');
+  r = boss.runTick(THU_8 + 60000);
+  assert.deepEqual(r.fired, ['🚚 Supplier "Agen A" dijadwalkan datang SEKARANG (08:00)']);
+  assert.deepEqual(boss.runTick(THU_8 + 2 * 60000).fired, []);
+  r = boss.runTick(THU_8 + 3600000 - 10 * 60000);
+  assert.match(r.fired[0], /sebentar lagi \(22\/10 09:00\)/);
+  r = boss.runTick(THU_8 + 3600000 + 1);
+  assert.match(r.fired[0], /SEKARANG \(22\/10 09:00\)/);
+  assert.ok(soon.firedAt, 'sekali-jadwal ditandai sudah berbunyi');
+  assert.equal(boss.db.sent.length, 4);
+  assert.deepEqual(boss.runTick(THU_8 + 86400000 * 7 - 2 * 3600000).fired, [], 'minggu depan, 2 jam sebelumnya: belum waktunya');
+  assert.equal(boss.runTick(THU_8 + 86400000 * 7 + 1).fired.length, 1, 'minggu depan berbunyi lagi');
+
+  // getChanges: delta pengingat hanya Bos; alerts hanya Bos
+  const d = await boss.call('getChanges', { since: 0 });
+  assert.equal(d.remRecurring.length, 1);
+  assert.equal(d.remOneoff.length, 1);
+  const worker = new LocalStore('worker', storage);
+  const dw = await worker.call('getChanges', { since: 0, tick: true });
+  assert.ok(!('remRecurring' in dw) && !('remOneoff' in dw) && !('alerts' in dw));
+
+  // supplier dihapus: jadwal ikut lenyap, tick melewatinya
+  await boss.call('saveOneOff', { supplierId: 2, ts: Date.now() + 5000 });
+  await boss.call('deleteSupplier', { id: 2 });
+  assert.ok(boss.db.remOneoff.filter((o) => o.supplierId === 2).every((o) => o.deletedAt));
+  await boss.call('deleteSupplier', { id: 1 });
+  Object.assign(boss.db.remRecurring[0], { lastFiredDate: null });
+  assert.deepEqual(boss.runTick(THU_8 + 86400000 * 14 + 60000).fired, []);
+});
+
+await t('pengingat: spanduk muncul lewat getChanges(tick) untuk Bos', async () => {
+  const boss = new LocalStore('boss', mem());
+  await boss.call('saveSupplier', { name: 'Agen A' });
+  boss.db.remOneoff.push({ id: 'due', supplierId: 1, ts: Date.now() - 1000, preAlertMin: null, firedAt: null, preFiredAt: null, updatedAt: 1, deletedAt: null });
+  const d = await boss.call('getChanges', { since: 0, tick: true });
+  assert.equal(d.alerts.length, 1);
+  assert.match(d.alerts[0], /Agen A.*SEKARANG/);
+  const again = await boss.call('getChanges', { since: 0, tick: true });
+  assert.ok(!again.alerts, 'tidak berbunyi lagi');
+  const noTick = await boss.call('getChanges', { since: 0 });
+  assert.ok(!noTick.alerts);
 });
 
 console.log(`\nHASIL: ${n} uji LocalStore lulus`);

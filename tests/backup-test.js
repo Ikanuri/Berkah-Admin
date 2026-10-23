@@ -8,11 +8,12 @@ const t = async (name, fn) => { await fn(); n++; console.log('✓', name); };
 
 // DB memori yang meniru tabel server + antarmuka io
 class MemDb {
-  constructor() { this.categories = []; this.suppliers = []; this.items = []; this.logs = []; this.seq = { c: 0, s: 0 }; }
+  constructor() { this.categories = []; this.suppliers = []; this.items = []; this.logs = []; this.recs = []; this.ones = []; this.seq = { c: 0, s: 0 }; }
   snapshot() {
     return {
       categories: this.categories.map((c) => ({ ...c })), suppliers: this.suppliers.map((s) => ({ ...s })),
       items: this.items.map((i) => ({ ...i })), priceLogIds: new Set(this.logs.map((l) => l.id)),
+      remRecurring: this.recs.map((r) => ({ ...r })), remOneoffIds: this.ones.map((o) => o.id),
     };
   }
   io() {
@@ -24,6 +25,8 @@ class MemDb {
       insertItems: async (rows) => { this.items.push(...rows.map((r) => ({ ...r, deletedAt: null }))); },
       updateItem: async (id, patch) => { Object.assign(this.items.find((i) => i.id === id), patch); },
       insertLogs: async (rows) => { this.logs.push(...rows); },
+      upsertRecurring: async (r) => { const i = this.recs.findIndex((x) => x.supplierId === r.supplierId); const row = { ...r, deletedAt: null }; if (i >= 0) this.recs[i] = row; else this.recs.push(row); },
+      insertOneOffs: async (rows) => { this.ones.push(...rows); },
     };
   }
 }
@@ -199,15 +202,64 @@ await t('FILE ASLI dari app lama v1.5.0 (tests/fixtures/legacy-backup.json) bisa
   assert.equal(incoming.items.find((i) => i.name === 'Gula Pasir').qty, 2.5, 'qty desimal terjaga');
   assert.deepEqual(incoming.suppliers.map((s) => [s.name, s.deleted]), [['Agen Maju', false], ['Toko Sumber', false], ['Supplier Hapus', true]]);
   assert.equal(incoming.priceLog.length, 4);
+  assert.deepEqual(incoming.remRecurring.map((r) => [r.supplierName, r.days, r.time, r.preAlertMin]), [['Agen Maju', [1, 4], '08:00', 30]]);
+  assert.deepEqual(incoming.remOneoff.map((o) => [o.id, o.supplierName, o.ts, o.preAlertMin]), [['o1', 'Agen Maju', 1893456000000, null]]);
   const db = new MemDb();
   const c = await restore(db, real);
+  assert.deepEqual(c.reminders, { recurring: 1, recSkip: 0, oneOff: 1, oneDup: 0, oneExpired: 0 });
+  assert.deepEqual(db.recs.map((r) => [r.supplierId, r.days, r.time]), [[db.suppliers.find((x) => x.name === 'Agen Maju').id, [1, 4], '08:00']]);
   assert.deepEqual(c, {
     categories: { add: 3, revive: 0 }, suppliers: { add: 3, revive: 0 },
     items: { add: 6, overwrite: 0, skip: 0 }, priceLog: { add: 4, dup: 0, orphan: 0 },
+    reminders: { recurring: 1, recSkip: 0, oneOff: 1, oneDup: 0, oneExpired: 0 },
   });
   assert.equal(db.logs.find((l) => l.id === 'p4').supplierId, db.suppliers.find((s) => s.name === 'Supplier Hapus').id);
   const c2 = await restore(db, real);
   assert.equal(c2.items.add + c2.priceLog.add + c2.suppliers.add + c2.categories.add, 0, 'idempoten pada file asli');
+  assert.deepEqual(c2.reminders, { recurring: 0, recSkip: 1, oneOff: 0, oneDup: 1, oneExpired: 0 });
+  assert.equal(db.recs.length, 1);
+  assert.equal(db.ones.length, 1);
+});
+
+await t('pengingat: kebijakan merge app lama (mingguan hanya mengisi yang kosong; sekali-jadwal union; yang lewat dibuang)', async () => {
+  const mk = () => ({
+    app: 'berkah-aio', version: 1,
+    stok: {
+      boss: { cats: ['A'], items: { A: [] } }, suppliers: ['S1', 'S2'],
+      reminders: {
+        S1: { recurring: { days: [1], time: '09:00', preAlertMin: 15 }, oneOff: [
+          { id: 'x1', ts: 2000, preAlertMin: null, firedAt: null, preFiredAt: null },   // sudah lewat
+          { id: 'x2', ts: 9e12, preAlertMin: 60, firedAt: null, preFiredAt: null },
+        ] },
+        S2: { recurring: { days: [], time: '09:00' }, oneOff: [{ id: 'x3', ts: 'bukan-angka' }] }, // tidak valid
+      },
+    },
+  });
+  const db = new MemDb();
+  await db.io().insertSupplier({ name: 'S1', deleted: false });
+  db.recs.push({ supplierId: 1, days: [5], time: '07:00', preAlertMin: null, lastFiredDate: null, lastPreFiredDate: null, deletedAt: null });
+  const { incoming, warnings } = parseBackup(mk());
+  assert.ok(warnings.some((w) => /2 jadwal pengingat tidak valid/.test(w)));
+  let plan = planRestore(db.snapshot(), incoming, { now: 100000 });
+  assert.deepEqual(plan.counts.reminders, { recurring: 0, recSkip: 1, oneOff: 1, oneDup: 0, oneExpired: 1 }, 'mingguan yang sudah ada tidak ditimpa; x1 kedaluwarsa');
+  await applyPlan(plan, db.io());
+  assert.deepEqual(db.recs[0].days, [5], 'jadwal lokal dipertahankan');
+  assert.deepEqual(db.ones.map((o) => o.id), ['x2']);
+  plan = planRestore(db.snapshot(), incoming, { now: 100000, onConflict: 'overwrite' });
+  assert.equal(plan.counts.reminders.recurring, 1, "'overwrite' mengganti jadwal mingguan");
+  await applyPlan(plan, db.io());
+  assert.deepEqual(db.recs[0].days, [1]);
+  assert.equal(plan.counts.reminders.oneDup, 1, 'x2 sudah ada: tidak ganda');
+});
+
+await t('format sendiri membawa pengingat bolak-balik', async () => {
+  const src = new MemDb();
+  await restore(src, JSON.parse(readFileSync(new URL('./fixtures/legacy-backup.json', import.meta.url), 'utf8')));
+  const json = makeBackup({ categories: src.categories, items: src.items, suppliers: src.suppliers, priceLog: src.logs, remRecurring: src.recs, remOneoff: src.ones });
+  const dst = new MemDb();
+  const c = await restore(dst, JSON.parse(JSON.stringify(json)));
+  assert.deepEqual(c.reminders, { recurring: 1, recSkip: 0, oneOff: 1, oneDup: 0, oneExpired: 0 });
+  assert.deepEqual(dst.recs[0].days, [1, 4]);
 });
 
 console.log(`\nHASIL: ${n} uji backup lulus`);

@@ -237,6 +237,59 @@ await step('Bos: supplier, input harga, tier termurah & seri', async () => {
   await waitHpp('Gula Pasir', 'hargaBeli', '47500'); // harga terakhir menimpa Harga Beli
 });
 
+await step('Bos: pengingat supplier (mingguan, sekali-jadwal, spanduk, hapus, pesan uji)', async () => {
+  await page.click('.sub-btn:has-text("Supplier")');
+  await page.click('.sub-btn:has-text("Pengingat")');
+  await page.waitForSelector('.sup-rem-row');
+  assert.match(await page.textContent('.panel .hint'), /semua Bos/);
+  // jadwal mingguan Agen A: Senin & Kamis 07:30, pra-alert 60
+  await page.locator('.sup-rem-row', { hasText: 'Agen A' }).locator('.mini-btn:text("Atur")').click();
+  await page.click('.modal [data-day="4"]');
+  await page.click('.modal [data-day="1"]');
+  await page.fill('.modal input[type=time]', '07:30');
+  await page.check('.modal input[type=checkbox]');
+  await page.selectOption('.modal select', '60');
+  await page.click('#rec-save');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sup-rem-row')].find((r) => r.textContent.includes('Agen A'))?.textContent.includes('Sen,Kam • 07:30 (pra-alert 60 mnt)'));
+  // validasi: tanpa hari ditolak
+  await page.locator('.sup-rem-row', { hasText: 'Agen B' }).locator('.mini-btn:text("Atur")').click();
+  await page.click('#rec-save');
+  await page.waitForFunction(() => document.getElementById('toast')?.textContent.includes('Pilih minimal satu hari'));
+  await page.click('.modal-foot .btn.sm:text-is("Batal")');
+  // sekali-jadwal untuk Agen B pada menit WIB saat ini -> berbunyi saat tick berikutnya
+  const wibNow = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16);
+  await page.click('#once-add');
+  await page.selectOption('.modal select', { label: 'Agen B' });
+  await page.fill('.modal input[type=datetime-local]', wibNow);
+  await page.click('#once-save');
+  await page.waitForSelector('.sup-rem-once-row');
+  assert.match(await page.textContent('.sup-rem-once-row'), /Agen B/);
+  // muat ulang = poll pertama dengan tick -> spanduk
+  await page.goto(BASE + '?dev=boss');
+  await page.waitForSelector('#remind-banner');
+  assert.match(await page.textContent('#remind-banner'), /Agen B.*SEKARANG/);
+  await shot('7-pengingat-banner');
+  await page.click('.srb-close');
+  await page.waitForFunction(() => !document.getElementById('remind-banner'));
+  await page.click('.sub-btn:has-text("Supplier")');
+  await page.click('.sub-btn:has-text("Pengingat")');
+  await page.waitForSelector('.sup-rem-row');
+  assert.equal(await page.locator('.sup-rem-once-row').count(), 0, 'yang sudah berbunyi hilang dari daftar');
+  // tambah pengingat besok lalu hapus
+  const tomorrow = new Date(Date.now() + 7 * 3600000 + 86400000).toISOString().slice(0, 11) + '10:00';
+  await page.click('#once-add');
+  await page.fill('.modal input[type=datetime-local]', tomorrow);
+  await page.click('#once-save');
+  await page.waitForSelector('.sup-rem-once-row');
+  await page.locator('.sup-rem-once-row .mini-btn:text("Hapus")').click();
+  await modalOk();
+  await page.waitForFunction(() => document.querySelectorAll('.sup-rem-once-row').length === 0);
+  // pesan uji: di mode dev tidak ada Telegram -> gagal dengan penjelasan
+  await page.click('.btn:text("🔔 Kirim pesan uji")');
+  await page.waitForFunction(() => document.getElementById('toast')?.textContent.includes('Gagal kirim'));
+  await shot('8-pengingat');
+});
+
 await step('Bos: pengaturan, tema gelap, persetujuan pengguna', async () => {
   await page.click('.icon-btn[title="Pengaturan"]');
   await page.waitForSelector('.user-row');

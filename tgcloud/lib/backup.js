@@ -12,6 +12,7 @@
 import { UNITS } from './units.js';
 import { normName } from './rules.js';
 import { makeId } from './id.js';
+import { validateRecurring } from './reminders.js';
 
 export const OWN_APP = 'berkah-mini';
 export const BACKUP_VERSION = 1;
@@ -22,12 +23,12 @@ const posNum = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
 // ── Pembuat backup (format sendiri) ─────────────────────────────────────────
-export function makeBackup({ categories, items, suppliers, priceLog }, now = Date.now()) {
+export function makeBackup({ categories, items, suppliers, priceLog, remRecurring = [], remOneoff = [] }, now = Date.now()) {
   return {
     app: OWN_APP,
     version: BACKUP_VERSION,
     exportedAt: new Date(now).toISOString(),
-    tables: { categories, items, suppliers, priceLog },
+    tables: { categories, items, suppliers, priceLog, remRecurring, remOneoff },
   };
 }
 
@@ -68,10 +69,26 @@ function cleanLog(raw, ctx) {
   };
 }
 
+// supplierName: nama supplier pemilik jadwal. Mengembalikan baris bersih atau null.
+function cleanRecurring(raw, supplierName, ctx) {
+  try {
+    const v = validateRecurring({ days: raw.days, time: raw.time, preAlertMin: raw.preAlertMin });
+    return { supplierName, ...v, lastFiredDate: str(raw.lastFiredDate) || null, lastPreFiredDate: str(raw.lastPreFiredDate) || null };
+  } catch { ctx.invalid.reminders++; return null; }
+}
+
+function cleanOneOff(raw, supplierName, ctx) {
+  const ts = posNum(raw.ts);
+  if (!ts) { ctx.invalid.reminders++; return null; }
+  let pre = null;
+  if (raw.preAlertMin != null && raw.preAlertMin !== '') pre = [15, 30, 60].includes(Number(raw.preAlertMin)) ? Number(raw.preAlertMin) : null;
+  return { id: str(raw.id) || makeId(), supplierName, ts, preAlertMin: pre, firedAt: posNum(raw.firedAt), preFiredAt: posNum(raw.preFiredAt) };
+}
+
 function newCtx() {
   const warnings = [];
   return {
-    warnings, ids: new Set(), invalid: { items: 0, priceLog: 0 },
+    warnings, ids: new Set(), invalid: { items: 0, priceLog: 0, reminders: 0 },
     warn: (m) => { if (!warnings.includes(m)) warnings.push(m); },
   };
 }
@@ -79,11 +96,12 @@ function newCtx() {
 function finish(format, ctx, incoming) {
   if (ctx.invalid.items) ctx.warn(`${ctx.invalid.items} barang tidak valid dilewati`);
   if (ctx.invalid.priceLog) ctx.warn(`${ctx.invalid.priceLog} entri harga tidak valid dilewati`);
+  if (ctx.invalid.reminders) ctx.warn(`${ctx.invalid.reminders} jadwal pengingat tidak valid dilewati`);
   return { format, incoming, warnings: ctx.warnings };
 }
 
 // ── Format lama (berkah-aio v1 dan "Backup Stok") ───────────────────────────
-function fromLegacyStok(stok, supplierNames, pricelog) {
+function fromLegacyStok(stok, supplierNames, pricelog, reminders) {
   const ctx = newCtx();
   const excluded = new Set((Array.isArray(stok.outCatEx) ? stok.outCatEx : []).map(normName));
   const cats = [];
@@ -118,7 +136,15 @@ function fromLegacyStok(stok, supplierNames, pricelog) {
     }
     priceLog.push(e);
   }
-  return finish('berkah-aio', ctx, { categories, items, suppliers, priceLog });
+  const remRecurring = [], remOneoff = [];
+  for (const [name0, rem] of Object.entries(reminders && typeof reminders === 'object' ? reminders : {})) {
+    const name = str(name0);
+    if (!name || !rem) continue;
+    if (!supSeen.has(name)) { supSeen.add(name); suppliers.push({ name, deleted: true }); }
+    if (rem.recurring) { const r = cleanRecurring(rem.recurring, name, ctx); if (r) remRecurring.push(r); }
+    for (const o of Array.isArray(rem.oneOff) ? rem.oneOff : []) { const r = cleanOneOff(o || {}, name, ctx); if (r) remOneoff.push(r); }
+  }
+  return finish('berkah-aio', ctx, { categories, items, suppliers, priceLog, remRecurring, remOneoff });
 }
 
 // ── Format sendiri ──────────────────────────────────────────────────────────
@@ -146,7 +172,18 @@ function fromOwn(data) {
     if (e) priceLog.push(e);
   }
   items.sort((a, b) => a.sortOrder - b.sortOrder);
-  return finish(OWN_APP, ctx, { categories, items, suppliers, priceLog });
+  const remRecurring = [], remOneoff = [];
+  for (const raw of Array.isArray(t.remRecurring) ? t.remRecurring : []) {
+    const name = supName.get(raw.supplierId);
+    const r = name ? cleanRecurring(raw, name, ctx) : (ctx.invalid.reminders++, null);
+    if (r) remRecurring.push(r);
+  }
+  for (const raw of Array.isArray(t.remOneoff) ? t.remOneoff : []) {
+    const name = supName.get(raw.supplierId);
+    const r = name ? cleanOneOff(raw, name, ctx) : (ctx.invalid.reminders++, null);
+    if (r) remOneoff.push(r);
+  }
+  return finish(OWN_APP, ctx, { categories, items, suppliers, priceLog, remRecurring, remOneoff });
 }
 
 export function parseBackup(data) {
@@ -157,23 +194,24 @@ export function parseBackup(data) {
   }
   if (data.app === 'berkah-aio') {
     if (!data.stok?.boss) throw new Error('Backup ini tidak berisi data Stok');
-    return fromLegacyStok(data.stok.boss, data.stok.suppliers, data.stok.pricelog);
+    return fromLegacyStok(data.stok.boss, data.stok.suppliers, data.stok.pricelog, data.stok.reminders);
   }
   if (Array.isArray(data.cats) && data.items && typeof data.items === 'object') {
-    return fromLegacyStok(data, data.hppSuppliers, data.hppLog); // "Backup Stok" app lama
+    return fromLegacyStok(data, data.hppSuppliers, data.hppLog, data.hppReminders); // "Backup Stok" app lama
   }
   throw new Error('Format backup tidak dikenal');
 }
 
 // ── Rencana merge ───────────────────────────────────────────────────────────
 // existing: { categories, items, suppliers, priceLogIds:Set|array } (baris mentah, termasuk tombstone)
-export function planRestore(existing, incoming, { onConflict = 'keep' } = {}) {
+export function planRestore(existing, incoming, { onConflict = 'keep', now = Date.now() } = {}) {
   const overwrite = onConflict === 'overwrite';
   const plan = {
     categories: { add: [], revive: [] },
     suppliers: { add: [], revive: [] },
     items: { add: [], overwrite: [], skip: 0, idMap: {} },
     priceLog: { add: [], dup: 0, orphan: 0 },
+    reminders: { recurring: [], oneOff: [], recSkip: 0, oneDup: 0, oneExpired: 0 },
   };
 
   // kategori: dicocokkan lewat NAMA (app lama tidak punya id kategori)
@@ -244,11 +282,30 @@ export function planRestore(existing, incoming, { onConflict = 'keep' } = {}) {
     plan.priceLog.add.push({ ...e, itemId });
   }
 
+  // pengingat (kebijakan app lama): sekali-jadwal = union per id; mingguan = hanya
+  // mengisi supplier yang belum punya jadwal (kecuali 'overwrite'). Sekali-jadwal
+  // yang sudah lewat tidak diimpor supaya tidak langsung berbunyi.
+  const liveRec = new Map((existing.remRecurring || []).filter((r) => !r.deletedAt).map((r) => [r.supplierId, r]));
+  const knownOne = new Set(existing.remOneoffIds || []);
+  const supIdOf = (name) => supByName.get(normName(name))?.id;
+  for (const r of incoming.remRecurring || []) {
+    const sid = supIdOf(r.supplierName);
+    if (sid != null && liveRec.has(sid) && !overwrite) { plan.reminders.recSkip++; continue; }
+    plan.reminders.recurring.push(r);
+  }
+  for (const o of incoming.remOneoff || []) {
+    if (knownOne.has(o.id)) { plan.reminders.oneDup++; continue; }
+    if (!o.firedAt && o.ts < now - 60000) { plan.reminders.oneExpired++; continue; }
+    knownOne.add(o.id);
+    plan.reminders.oneOff.push(o);
+  }
+
   plan.counts = {
     categories: { add: plan.categories.add.length, revive: plan.categories.revive.length },
     suppliers: { add: plan.suppliers.add.length, revive: plan.suppliers.revive.length },
     items: { add: plan.items.add.length, overwrite: plan.items.overwrite.length, skip: plan.items.skip },
     priceLog: { add: plan.priceLog.add.length, dup: plan.priceLog.dup, orphan: plan.priceLog.orphan },
+    reminders: { recurring: plan.reminders.recurring.length, recSkip: plan.reminders.recSkip, oneOff: plan.reminders.oneOff.length, oneDup: plan.reminders.oneDup, oneExpired: plan.reminders.oneExpired },
   };
   plan.catByName = Object.fromEntries([...catByName].map(([k, c]) => [k, c.id]));
   plan.supByName = Object.fromEntries([...supByName].map(([k, s]) => [k, s.id]));
@@ -257,7 +314,8 @@ export function planRestore(existing, incoming, { onConflict = 'keep' } = {}) {
 
 // ── Penerap rencana ─────────────────────────────────────────────────────────
 // io (async): insertCategory(row)->id, reviveCategory(id), insertSupplier({name,deleted})->id,
-//   reviveSupplier(id), insertItems(rows), updateItem(id, patch), insertLogs(rows)
+//   reviveSupplier(id), insertItems(rows), updateItem(id, patch), insertLogs(rows),
+//   upsertRecurring(row), insertOneOffs(rows)
 export async function applyPlan(plan, io) {
   const catId = new Map(Object.entries(plan.catByName));
   const supId = new Map(Object.entries(plan.supByName));
@@ -283,5 +341,15 @@ export async function applyPlan(plan, io) {
     return { ...rest, supplierId: supId.get(normName(supplierName)) };
   });
   if (logs.length) await io.insertLogs(logs);
+  for (const r of plan.reminders.recurring) {
+    const { supplierName, ...rest } = r;
+    await io.upsertRecurring({ ...rest, supplierId: supId.get(normName(supplierName)) });
+  }
+  if (plan.reminders.oneOff.length) {
+    await io.insertOneOffs(plan.reminders.oneOff.map((o) => {
+      const { supplierName, ...rest } = o;
+      return { ...rest, supplierId: supId.get(normName(supplierName)) };
+    }));
+  }
   return plan.counts;
 }

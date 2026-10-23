@@ -2,19 +2,21 @@
 // rencana. Insert di-chunk karena batas variabel SQLite (baris x kolom).
 import { db } from 'sdk';
 import { eq, and, isNull } from 'sdk/db';
-import { categories, suppliers, items, priceLog } from '../schema.js';
+import { categories, suppliers, items, priceLog, remRecurring, remOneoff } from '../schema.js';
 
 const ITEM_CHUNK = 40;  // 13 kolom
 const LOG_CHUNK = 60;   // 9 kolom
 
 export async function loadExisting() {
-  const [cats, sups, its, logs] = await Promise.all([
+  const [cats, sups, its, logs, recs, ones] = await Promise.all([
     db.select().from(categories).all(),
     db.select().from(suppliers).all(),
     db.select().from(items).all(),
     db.select({ id: priceLog.id }).from(priceLog).all(),
+    db.select().from(remRecurring).all(),
+    db.select({ id: remOneoff.id }).from(remOneoff).all(),
   ]);
-  return { categories: cats, suppliers: sups, items: its, priceLogIds: logs.map((l) => l.id) };
+  return { categories: cats, suppliers: sups, items: its, priceLogIds: logs.map((l) => l.id), remRecurring: recs, remOneoffIds: ones.map((o) => o.id) };
 }
 
 export function makeIo(now = Date.now()) {
@@ -49,6 +51,17 @@ export function makeIo(now = Date.now()) {
       const p = { ...patch, updatedAt: now };
       if (p.checked && p.checkedAt == null) p.checkedAt = now;
       await db.update(items).set(p).where(eq(items.id, id)).run();
+    },
+    async upsertRecurring(r) {
+      const row = { supplierId: r.supplierId, days: r.days, time: r.time, preAlertMin: r.preAlertMin, lastFiredDate: r.lastFiredDate, lastPreFiredDate: r.lastPreFiredDate, updatedAt: now, deletedAt: null };
+      await db.insert(remRecurring).values(row).onConflictDoUpdate({ target: remRecurring.supplierId, set: { ...row } }).run();
+    },
+    async insertOneOffs(rows) {
+      for (let i = 0; i < rows.length; i += 60) {
+        await db.insert(remOneoff).values(rows.slice(i, i + 60).map((o) => ({
+          id: o.id, supplierId: o.supplierId, ts: o.ts, preAlertMin: o.preAlertMin, firedAt: o.firedAt, preFiredAt: o.preFiredAt, updatedAt: now,
+        }))).run();
+      }
     },
     async insertLogs(rows) {
       for (let i = 0; i < rows.length; i += LOG_CHUNK) {

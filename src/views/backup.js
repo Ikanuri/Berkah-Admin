@@ -34,6 +34,7 @@ function countsTable(c) {
     row('Kategori', [c.categories.add && `+${c.categories.add} baru`, c.categories.revive && `${c.categories.revive} dihidupkan lagi`]),
     row('Supplier', [c.suppliers.add && `+${c.suppliers.add} baru`, c.suppliers.revive && `${c.suppliers.revive} dihidupkan lagi`]),
     row('Barang', [c.items.add && `+${c.items.add} baru`, c.items.overwrite && `${c.items.overwrite} ditimpa`, c.items.skip && `${c.items.skip} sudah ada`]),
+    row('Pengingat', c.reminders ? [c.reminders.recurring && `${c.reminders.recurring} jadwal mingguan`, c.reminders.oneOff && `${c.reminders.oneOff} sekali-jadwal`, c.reminders.recSkip && `${c.reminders.recSkip} mingguan sudah ada`, c.reminders.oneExpired && `${c.reminders.oneExpired} kedaluwarsa dilewati`] : []),
     row('Riwayat harga', [c.priceLog.add && `+${c.priceLog.add} baru`, c.priceLog.dup && `${c.priceLog.dup} sudah ada`, c.priceLog.orphan && `${c.priceLog.orphan} dilewati (barang tidak ada)`])));
 }
 
@@ -53,7 +54,7 @@ async function previewAndConfirm(ctx, data, filename) {
     let out;
     try { out = await call('restorePreview', { data, onConflict }); } catch (e) { box.replaceChildren(h('div', { class: 'alert alert-err' }, e.message)); return; }
     const total = out.counts.categories.add + out.counts.suppliers.add + out.counts.items.add + out.counts.items.overwrite + out.counts.priceLog.add
-      + out.counts.categories.revive + out.counts.suppliers.revive;
+      + out.counts.categories.revive + out.counts.suppliers.revive + (out.counts.reminders ? out.counts.reminders.recurring + out.counts.reminders.oneOff : 0);
     box.replaceChildren(
       h('div', { style: 'margin-bottom:8px;' }, h('span', { class: 'badge badge-timeout' }, FORMAT_LABEL[out.format] || out.format)),
       countsTable(out.counts),
