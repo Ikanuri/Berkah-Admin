@@ -9,10 +9,12 @@ import { renderChecklist } from './views/checklist.js';
 import { renderHpp } from './views/hpp.js';
 import { renderSupplier } from './views/supplier.js';
 import { openSettings } from './views/settings.js';
+import { renderNota } from './views/nota.js';
 
 const app = document.getElementById('app');
 const state = createState();
 let view = 'checklist';
+let mod = 'stok'; // modul aktif: stok | nota (Nota khusus Bos)
 
 // Sub-tampilan modul Stok. HPP dan Supplier = harga modal, khusus Bos.
 const VIEWS = {
@@ -38,6 +40,7 @@ function dateLabel() {
 
 function shell() {
   const m = mode();
+  if (mod !== 'stok' && !ctx.isBoss) mod = 'stok';
   if (!VIEWS[view] || (VIEWS[view].boss && !ctx.isBoss)) view = 'checklist';
   const [roleCls, roleLbl] = ROLE[state.me.role];
   return h('div', {},
@@ -50,6 +53,10 @@ function shell() {
       h('div', { class: 'brand', title: 'Toko Berkah' },
         h('span', { class: 'brand-mark' }, '✳'),
         h('span', { class: 'brand-name' }, 'Toko ', h('em', {}, 'Berkah'))),
+      ctx.isBoss ? h('div', { class: 'mod-tabs' }, [['stok', 'Stok'], ['nota', 'Nota']].map(([k, label]) => h('button', {
+        class: 'mod-tab' + (mod === k ? ' active' : ''), 'data-mod': k,
+        onclick: () => { mod = k; render(); },
+      }, h('span', { class: 'dot' }), label))) : null,
       h('div', { style: 'flex:1' }),
       h('div', { class: 'top-actions' },
         h('button', { class: 'icon-btn', title: 'Ganti tema', onclick: () => { cycleTheme(); } }, '◐'),
@@ -63,11 +70,12 @@ function shell() {
           h('span', { class: 'sk-la-dot' }),
           h('span', {}, 'Diubah ', h('b', {}, relTime(state.lastAct.ts)), ' — ', state.lastAct.desc,
             state.lastAct.by ? h('span', { style: 'color:var(--ink4);' }, ' · ' + state.lastAct.by) : null)) : null,
-        ctx.isBoss ? h('div', { class: 'pn-subnav' }, Object.entries(VIEWS).map(([key, v]) => h('button', {
+        mod === 'nota' ? renderNota(ctx) : null,
+        mod === 'stok' && ctx.isBoss ? h('div', { class: 'pn-subnav' }, Object.entries(VIEWS).map(([key, v]) => h('button', {
           class: 'sub-btn' + (key === view ? ' active' : ''),
           onclick: () => { view = key; render(); },
         }, v.label))) : null,
-        VIEWS[view].render(ctx))),
+        mod === 'stok' ? VIEWS[view].render(ctx) : null)),
     h('div', { class: 'app-footer' }, h('span', { class: 'sig' }, h('span', { class: 'spark' }, '✳'), ' ', h('b', {}, 'Toko Berkah'), ' · Telegram Mini App')));
 }
 

@@ -348,6 +348,40 @@ await step('Bos: backup lalu restore backup ASLI app lama lewat UI (preview, mer
   await fresh.close();
 });
 
+await step('Bos: Nota Kulakan (impor CSV, cocok, koreksi, generate, simpan, riwayat, kamus)', async () => {
+  await page.click('.mod-tab[data-mod=nota]');
+  await page.waitForSelector('.upload-zone');
+  await page.setInputFiles('.upload-zone input', 'legacy/data/Products.csv');
+  await page.waitForSelector('.db-status-box');
+  assert.match(await page.textContent('.db-status-box'), /produk/);
+  await page.fill('textarea.inp', '3 kg Kacang Osik\n21 LPG\nzzqqxx');
+  await page.click('.btn:text("▶ Proses & Cari Harga")');
+  await page.waitForSelector('.tbl-wrap tbody tr.total-row');
+  assert.equal(await page.locator('.tbl-wrap tbody tr:not(.total-row)').count(), 3);
+  assert.ok(await page.locator('.chip.err').count() >= 1, 'baris asal-asalan ditandai tidak ada');
+  // koreksi manual lewat dropdown cari -> masuk kamus
+  await page.locator('.tbl-wrap tbody tr').nth(2).locator('.cd-trigger').dispatchEvent('click'); // tabel lebar digulir horizontal di HP
+  await page.fill('#nk-cdfloat .cd-search input', 'gula');
+  await page.locator('#nk-cdfloat .cd-item').first().click();
+  assert.ok(await page.locator('.tbl-wrap tbody tr').nth(2).locator('.chip.confirmed').count() === 1);
+  await page.click('.btn.primary:text("✓ Generate Nota")');
+  if (await page.locator('.overlay .modal .btn.primary').count()) await modalOk();
+  await page.waitForSelector('.receipt');
+  assert.match(await page.textContent('.receipt'), /TOKO BERKAH[\s\S]*Total/);
+  await shot('7-nota');
+  await page.click('.btn:text("💾 Simpan ke Riwayat")');
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('tersimpan'));
+  await page.click('.panel-head .btn:text("🗂")');
+  await page.waitForSelector('.hist-item');
+  assert.match(await page.textContent('.hist-item'), /#KLK-001/);
+  await page.click('.overlay .modal-x');
+  await page.click('.mini-btn:text-matches("Kamus Belajar")');
+  await page.waitForSelector('.overlay .hist-item');
+  await page.click('.overlay .modal-x');
+  await page.click('.mod-tab[data-mod=stok]');
+  await page.waitForSelector('.pn-subnav');
+});
+
 await step('Karyawan: tanpa sub-tab, tier, filter order, hapus, atau angka modal', async () => {
   await page.goto(BASE + '?dev=worker');
   await page.waitForSelector('.item-card');
@@ -357,6 +391,7 @@ await step('Karyawan: tanpa sub-tab, tier, filter order, hapus, atau angka modal
   assert.equal(await page.locator('.del-btn').count(), 0, 'hapus barang khusus Bos seperti app lama');
   assert.equal(await page.locator('.drag-handle').count(), 0);
   assert.equal(await page.locator('.sk-filterbar').count(), 0, 'filter tanggal khusus Bos');
+  assert.equal(await page.locator('.mod-tab').count(), 0, 'Nota khusus Bos');
   assert.equal(await page.locator('.counter-line .mini-btn').count(), 0);
   assert.equal(await page.locator('.btn:text("↺ Reset Semua Centang")').count(), 0);
   assert.equal(await page.locator('.btn:text("🗑 Hapus Semua Item")').count(), 0);

@@ -1,0 +1,71 @@
+/* Modul Nota Kulakan — disalin dari legacy/berkah-admin-1.5.0.html */
+.upload-zone{
+  border:1.5px dashed var(--border2);border-radius:var(--r-sm);padding:26px 18px;
+  text-align:center;cursor:pointer;background:var(--surface2);transition:all .2s;
+}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--accent-dim);}
+.upload-zone input{display:none;}
+.uz-icon{font-size:26px;margin-bottom:6px;}
+.uz-label{font-size:13px;font-weight:600;color:var(--ink2);}
+.uz-sub{font-size:11px;color:var(--ink3);font-family:var(--mono);margin-top:3px;}
+.db-status-box{
+  display:flex;align-items:center;gap:10px;padding:11px 14px;margin-top:10px;
+  background:var(--green-soft);border:1px solid var(--green);border-radius:var(--r-sm);
+  font-size:12px;color:var(--green);font-family:var(--mono);flex-wrap:wrap;
+}
+.cd-wrap{position:relative;min-width:190px;}
+.cd-trigger{
+  width:100%;padding:6px 26px 6px 10px;border:1px solid var(--border2);border-radius:8px;
+  background:var(--surface);cursor:pointer;user-select:none;position:relative;transition:border .15s;
+}
+.cd-trigger:hover{border-color:var(--accent);}
+.cd-trigger.open{border-color:var(--accent);border-radius:8px 8px 0 0;}
+.cd-label{display:block;font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cd-meta{display:block;font-size:10px;color:var(--ink3);font-family:var(--mono);}
+.cd-arrow{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--ink4);}
+.cd-list{
+  position:absolute;top:100%;left:0;right:0;z-index:500;display:none;
+  background:var(--surface);border:1px solid var(--accent);border-top:none;
+  border-radius:0 0 10px 10px;box-shadow:var(--shadow-md);max-height:240px;overflow-y:auto;
+}
+.cd-list.open{display:block;}
+.cd-search{position:sticky;top:0;z-index:2;background:var(--surface);padding:7px 8px;border-bottom:1px solid var(--border);}
+.cd-search input{
+  width:100%;padding:7px 10px 7px 28px;border:1px solid var(--border2);border-radius:8px;
+  font-size:13px;background:var(--surface2);color:var(--ink);outline:none;
+}
+.cd-search input:focus{border-color:var(--accent);background:var(--surface);}
+.cd-search::before{content:'⌕';position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--ink4);font-size:13px;pointer-events:none;}
+.cd-empty{padding:12px 10px;font-size:11.5px;color:var(--ink4);text-align:center;font-family:var(--mono);}
+/* dropdown produk di-portal ke <body> (position:fixed) — bebas dari klip
+   overflow:auto milik .tbl-wrap (tabel scroll horizontal di HP). Posisi &
+   lebar diatur inline oleh JS tiap kali dibuka. */
+#nk-cdfloat{position:fixed;right:auto;border-radius:10px;}
+#nk-cdfloat.open{display:block;}
+/* ── NOTA THERMAL ── */
+.nota-side{position:sticky;top:72px;}
+.nota-scroll{background:var(--bg2);border-radius:var(--r-sm);padding:18px;max-height:calc(100vh - 210px);overflow-y:auto;}
+.receipt{
+  width:282px;margin:0 auto;background:#fff;color:#1a1a1a;padding:20px 16px;
+  font-family:var(--mono);font-size:11px;line-height:1.55;box-shadow:0 3px 22px rgba(0,0,0,.18);
+}
+.rc-head{text-align:center;margin-bottom:10px;}
+.rc-title{font-size:16px;font-weight:700;font-family:var(--sans);letter-spacing:-.3px;}
+.rc-sub{font-size:9.5px;color:#555;margin-top:1px;}
+.rc-dash{border:none;border-top:1px dashed #bbb;margin:9px 0;}
+.rc-meta{display:flex;justify-content:space-between;font-size:9.5px;color:#444;}
+.rc-item-name{font-weight:700;font-size:10.5px;font-family:var(--sans);margin-top:6px;}
+.rc-item-detail{display:flex;justify-content:space-between;font-size:9.5px;color:#555;padding-left:4px;}
+.rc-total{display:flex;justify-content:space-between;font-size:13.5px;font-weight:700;font-family:var(--sans);margin-top:5px;}
+.rc-row{display:flex;justify-content:space-between;font-size:10px;padding:1.5px 0;}
+.rc-foot{text-align:center;font-size:9px;color:#888;margin-top:10px;}
+.rc-flag{color:#b00;font-weight:700;}
+
+@media print{
+  body *{visibility:hidden!important;}
+  #nk-print-area, #nk-print-area *{visibility:visible!important;}
+  #nk-print-area{position:absolute;left:0;top:0;width:100%;}
+  .receipt{box-shadow:none!important;width:100%!important;margin:0!important;}
+  .topbar,.app-footer,#toast{display:none!important;}
+}
+@media(max-width:900px){.nota-side{position:static;}.cols{grid-template-columns:1fr;}}

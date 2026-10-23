@@ -112,3 +112,54 @@ export const remOneoff = table('reminders_oneoff', {
 }, (t) => ({
   updatedIdx: index('idx_rem_once_updated').on(t.updatedAt),
 }));
+
+// Nota Kulakan (V3). Database produk dari CSV (diganti utuh saat impor), kamus
+// belajar bersama, riwayat nota (maks 100 terbaru), dan urutan nomor nota.
+export const notaProducts = table('nota_products', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  nama: text('nama').notNull(),
+  kode: text('kode'),
+  barcode: text('barcode'),
+  satuan: text('satuan').notNull(),
+  satClass: text('sat_class').notNull(),
+  hargaJual: real('harga_jual').notNull().default(0),
+  hargaPokok: real('harga_pokok').notNull().default(0), // harga modal: Bos saja
+});
+
+export const notaMeta = table('nota_meta', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
+
+// kunci = 'tokenNama|kelasSatuan', nilai = nama produk di DB
+export const notaLearn = table('nota_learn', {
+  kunci: text('kunci').primaryKey(),
+  nilai: text('nilai').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at'),
+}, (t) => ({
+  updatedIdx: index('idx_nota_learn_updated').on(t.updatedAt),
+}));
+
+export const notaHist = table('nota_hist', {
+  id: text('id').primaryKey(),
+  num: text('num').notNull(), // boleh diedit pemakai: sengaja TIDAK unik
+  dateStr: text('date_str').notNull(),
+  timeStr: text('time_str').notNull(),
+  ket: text('ket').notNull(),
+  total: real('total').notNull(),
+  savedAt: integer('saved_at').notNull(),
+  lines: json('lines').notNull(),
+  createdBy: integer('created_by'),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at'),
+}, (t) => ({
+  updatedIdx: index('idx_nota_hist_updated').on(t.updatedAt),
+  savedIdx: index('idx_nota_hist_saved').on(t.savedAt),
+}));
+
+// Urutan nomor nota yang atomik: setiap simpan menambah satu baris; id-nya = nomor.
+export const notaSeq = table('nota_seq', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  ts: integer('ts').notNull(),
+});

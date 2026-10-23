@@ -14,6 +14,8 @@ import {
 } from '../tgcloud/lib/rules.js';
 import { latestActivity, visibleActivity } from '../tgcloud/lib/activity.js';
 import { makeBackup, parseBackup, planRestore, applyPlan } from '../tgcloud/lib/backup.js';
+import { cleanLines, notaNumber, packProducts, HIST_MAX } from '../tgcloud/lib/nota.js';
+import { parseProductsCSV } from '../tgcloud/lib/match.js';
 import { validateRecurring, validateOneOff, initialFired, planTick } from '../tgcloud/lib/reminders.js';
 
 const KEY = 'berkah-dev-db';
@@ -29,6 +31,7 @@ export class LocalStore {
     this.db.remRecurring ??= [];
     this.db.remOneoff ??= [];
     this.db.sent ??= [];
+    this.db.nota ??= { products: [], version: 0, learn: [], hist: [], seq: 0 };
     const now = Date.now();
     this.db.users = this.db.users.filter((u) => u.tgId !== ME);
     this.db.users.push({ tgId: ME, name: 'Anda (dev)', username: null, role, createdAt: now, updatedAt: now });
@@ -499,6 +502,84 @@ export class LocalStore {
     if (!['boss', 'worker', 'pending'].includes(role)) fail('Peran tidak valid');
     const u = this.db.users.find((x) => x.tgId === tgId);
     if (u) { u.role = role; u.updatedAt = Date.now(); }
+    return { ok: true };
+  }
+
+  // ── Nota Kulakan (khusus Bos) ──
+  ep_notaGetDb({ version } = {}) {
+    this.need('boss');
+    const n = this.db.nota;
+    if (version != null && Number(version) === n.version) return { unchanged: true, version: n.version };
+    return { version: n.version, count: n.products.length, rows: packProducts(n.products, { withCost: true }) };
+  }
+
+  ep_notaImportCsv({ csv }) {
+    this.need('boss');
+    const rows = parseProductsCSV(typeof csv === 'string' ? csv : '');
+    if (!rows.length) fail('CSV tidak valid — kolom "nama" tidak ditemukan');
+    this.db.nota.products = rows.map((r) => ({
+      nama: r.nama, kode: r.kode || null, barcode: r.barcode || null, satuan: r.satuan, satClass: r.satClass,
+      hargaJual: r.hargaJual, hargaPokok: r.hargaPokok,
+    }));
+    this.db.nota.version = Date.now();
+    this.log('notaImportCsv', { count: rows.length });
+    return { count: rows.length, version: this.db.nota.version };
+  }
+
+  ep_notaGetState({ since } = {}) {
+    this.need('boss');
+    const n = this.db.nota;
+    const s = Number(since) || 0;
+    return {
+      serverTime: Date.now(),
+      learn: n.learn.filter((r) => r.updatedAt > s),
+      hist: n.hist.filter((r) => r.updatedAt > s),
+      nextNumber: notaNumber(n.seq + 1),
+    };
+  }
+
+  ep_notaLearnSet({ kunci, nilai }) {
+    this.need('boss');
+    const k = String(kunci ?? '').trim(); const v = String(nilai ?? '').trim();
+    if (!k || !v) fail('Kunci dan nilai wajib');
+    const now = Date.now();
+    const cur = this.db.nota.learn.find((r) => r.kunci === k);
+    if (cur) Object.assign(cur, { nilai: v, updatedAt: now, deletedAt: null });
+    else this.db.nota.learn.push({ kunci: k, nilai: v, updatedAt: now, deletedAt: null });
+    return { ok: true };
+  }
+
+  ep_notaLearnDelete({ kunci }) {
+    this.need('boss');
+    const cur = this.db.nota.learn.find((r) => r.kunci === kunci);
+    if (cur) { cur.deletedAt = Date.now(); cur.updatedAt = cur.deletedAt; }
+    return { ok: true };
+  }
+
+  ep_notaSave(input) {
+    this.need('boss');
+    let cleaned;
+    try { cleaned = cleanLines(input.lines); } catch (e) { fail(e.message); }
+    const n = this.db.nota;
+    const now = Date.now();
+    n.seq += 1;
+    const num = String(input.num ?? '').trim().slice(0, 40) || notaNumber(n.seq);
+    const row = {
+      id: makeId(), num, dateStr: String(input.dateStr ?? '').slice(0, 40), timeStr: String(input.timeStr ?? '').slice(0, 20),
+      ket: String(input.ket ?? '').trim().slice(0, 120) || 'Kulakan Harian', total: cleaned.total, savedAt: now,
+      lines: cleaned.lines, createdBy: ME, updatedAt: now, deletedAt: null,
+    };
+    n.hist.push(row);
+    const live = n.hist.filter((r) => !r.deletedAt).sort((a, b) => b.savedAt - a.savedAt);
+    for (const old of live.slice(HIST_MAX)) { old.deletedAt = now; old.updatedAt = now; }
+    this.log('notaSave', { num, total: cleaned.total, lines: cleaned.lines.length });
+    return { id: row.id, num, total: cleaned.total };
+  }
+
+  ep_notaDelete({ id }) {
+    this.need('boss');
+    const r = this.db.nota.hist.find((x) => x.id === id);
+    if (r) { r.deletedAt = Date.now(); r.updatedAt = r.deletedAt; }
     return { ok: true };
   }
 }
