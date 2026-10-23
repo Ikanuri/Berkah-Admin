@@ -132,8 +132,8 @@ bentrok dan mengisi `checkedAt`, jadi importer perlu melakukan hal yang sama.
 | Penerima pengingat | Semua Bos |
 | Supplier terhapus | Soft delete (`deleted_at`); riwayat harga tetap |
 | Akses PNL | Bos saja |
-| Akses Nota | Belum diputuskan (usulan: karyawan boleh, tanpa `harga_pokok`) |
-| Parser angka PNL | Belum diputuskan (lihat 7.6) |
+| Akses Nota | Bos saja (tafsiran atas jawaban "1. Bos saja"; bisa dibuka untuk Karyawan nanti, `harga_pokok` sudah hanya dikirim ke Bos) |
+| Parser angka PNL | Tetap integer seperti app lama (`1.500,75` = 150075), tidak disatukan dengan parser HPP; diuji di `tests/pnl-test.js` |
 | Urutan fase | V1 Stok+HPP+Supplier, V2 pengingat, V3 Nota, V4 PNL |
 
 ## 7. Audit v1.5.0: Pengingat, Tier, HPP, alur order (`legacy/berkah-admin-1.5.0.html`)
@@ -329,12 +329,26 @@ Dari kode lama yang belum tertulis di atas:
 ## 8. Item §15 yang masih terbuka
 
 - [x] Rekomendasi 7.4 disetujui: satu daftar bersama, salin teks order tetap ada, `fulfillItem` menggantikan `processReply`.
-- [x] PNL boss-only (diputuskan). [ ] Nota: usulan boleh worker tanpa `harga_pokok`.
-- [ ] Parser angka PNL tetap integer atau diganti (7.6).
+- [x] PNL boss-only (diputuskan). [x] Nota boss-only (tafsiran; dapat dikoreksi).
+- [x] Parser angka PNL tetap integer (7.6).
 - [x] Pengingat dikirim ke semua Bos.
 - [x] Soft-delete supplier.
-- [ ] §7 blueprint: tabel mana yang delta-polling. Usulan: `items`, `price_log`,
-      `nota_learn` pakai `updated_at`/`since`; tabel kecil (`categories`, `suppliers`) fetch penuh.
-- [ ] §9: apakah `tgcloud` punya cron (butuh baca dokumentasi di luar halaman yang sudah dibaca).
-      Jika tidak, tick pengingat bisa dipicu dari polling klien, dengan jendela 7.1 mencegah bunyi ganda.
+- [x] §7 blueprint: delta-polling dipakai untuk Stok (`getChanges`) dan Nota (`notaGetState`: kamus + riwayat);
+      database produk Nota dicache per versi; PNL dimuat penuh (kecil, hanya Bos).
+- [x] §9: tgcloud tidak punya cron. Tick pengingat dipicu dari polling klien (tiap ~15 poll) dan cron GitHub Actions
+      (`reminders.yml`); klaim atomik `UPDATE ... WHERE` mencegah pesan ganda (diuji di cloud).
 - [x] Urutan fase §13 disetujui.
+
+## 9. Catatan implementasi (sesi akhir)
+
+- **Bug @tgcloud/cli 0.2.0**: pada deploy yang mengubah skema, `push` crash di `snapshot.js` setelah server menerima
+  semua modul. `deploy.yml` mengenali galat itu dan memverifikasi lewat `fetch` + `status` ("Working directory clean").
+- **Nota**: tabel `nota_products` (diganti utuh saat impor CSV), `nota_meta` (versi DB), `nota_learn` (tombstone),
+  `nota_hist` (maks 100, yang lebih lama ditandai terhapus), `nota_seq` (nomor atomik; nomor manual tetap menggeser urutan).
+  Total nota dihitung ulang di server. `harga_pokok` hanya dikirim ke Bos.
+- **PNL**: `pnl_days` (kunci tanggal TEXT, upsert) dan `pnl_arsip` (diganti utuh per tanggal; hapus hari tidak menghapus arsip).
+  Tanggal dihitung lewat UTC dari string `YYYY-MM-DD`; minggu ISO diuji pada batas tahun.
+- **Backup/restore** kini membawa Nota (kamus union per kunci, riwayat union per id, DB produk hanya bila kosong atau
+  mode timpa) dan PNL (hari & arsip per tanggal; tanggal yang ada dipertahankan kecuali mode timpa).
+- **Penyimpangan sengaja** dari app lama: pengingat berjadwal yang jamnya sudah lewat saat diimpor tidak dibunyikan,
+  sekali-jadwal kedaluwarsa tidak diimpor, margin massal SEMUA meminta konfirmasi, laporan PDF berbentuk halaman cetak sederhana.

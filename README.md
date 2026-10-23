@@ -5,18 +5,27 @@ dengan banyak pengguna pada satu database. Pengganti app single-file lama.
 
 ## Status
 
-Backend V1 dan frontend V1 sudah ada dan ter-deploy lewat GitHub Actions.
+Semua fungsi app lama v1.5.0 sudah diport dan ter-deploy lewat GitHub Actions:
 
-- `tgcloud/`: schema (6 tabel), lib murni (`money`, `tier`, `rules`, `shape`, `units`), `auth`, 22 endpoint
-- `src/` + `index.html`: Mini App (Vite, JS biasa tanpa framework). Tab Stok (semua peran) dan HPP, Supplier, Pengguna (Bos)
-- `tests/`: `npm test` (lib, skrip CI, LocalStore, guard impor, sintaks) dan `npm run e2e` (Chromium, butuh browser)
+| Modul | Siapa | Isi |
+|---|---|---|
+| Stok | Bos + Karyawan | daftar bersama, kategori, centang/qty/satuan, terima sebagian, filter tanggal, aksi massal, teks order |
+| HPP, Supplier | Bos | harga modal, margin (termasuk massal), riwayat harga supplier, tier termurah |
+| Pengingat | Bos | jadwal mingguan & sekali-jadwal per supplier, pesan Telegram ke semua Bos |
+| Nota Kulakan | Bos | impor CSV produk, pencocokan otomatis, kamus belajar, struk (cetak/WA/gambar), riwayat |
+| PNL | Bos | parser teks harian, tabel harian/mingguan/bulanan/rincian, margin tertimbang, arsip + donut, CSV, laporan |
+| Backup | Bos | export .json ke chat bot, restore merge dengan preview (format baru dan backup app lama, termasuk Nota & PNL) |
+
+- `tgcloud/`: schema (19 tabel), lib murni (`money`, `tier`, `rules`, `shape`, `units`, `backup`, `reminders`, `match`, `nota`, `pnl`), `auth`, 41 endpoint
+- `src/` + `index.html`: Mini App (Vite, JS biasa tanpa framework), tiga modul di topbar untuk Bos (Stok, Nota, PNL)
+- `tests/`: `npm test` (lib, skrip CI, LocalStore, backup, pengingat, Nota, PNL, guard impor, sintaks) dan `npm run e2e` (Chromium, butuh browser)
 
 Desain UI mengikuti app lama (`legacy/`): token warna ivory/arang + aksen crail, font Source Serif 4 /
-Inter / JetBrains Mono, topbar, panel, kartu barang, pil sub-navigasi, tabel HPP, modal, numpad, tema gelap.
+Inter / JetBrains Mono, topbar, panel, kartu barang, pil sub-navigasi, tabel, modal, numpad, tema gelap.
 Belum diport dari UI lama: panel Balasan/Log (digantikan "Terima" per barang), Export Excel,
-donut ringkasan Supplier, seekbar, bottom-nav modul (baru ada satu modul).
+donut ringkasan Supplier, seekbar, bottom-nav, laporan PDF berbagan grafik (diganti laporan cetak sederhana).
 
-Belum ada: export/restore/import backup, pengingat (V2), Nota (V3), PNL (V4), mode offline satu file.
+Belum ada: mode offline satu file `.html` (arsitektur adapter sudah siap: `LocalStore` di `src/local-store.js`).
 
 ## Menjalankan frontend secara lokal
 
@@ -50,7 +59,8 @@ Sesudah itu semuanya otomatis:
 | Workflow | Kapan | Isi |
 |---|---|---|
 | `ci.yml` | PR / push non-main | `npm test` dan E2E browser |
-| `deploy.yml` | push ke `main` / manual | test, build frontend, tulis `BOSS_IDS` ke `boss-ids.js`, cek kebocoran, `migrate --safe`, `push --force`, diagnosa |
+| `deploy.yml` | push ke `main` / manual | test, build frontend, tulis `BOSS_IDS` ke `boss-ids.js`, cek kebocoran, `migrate --safe`, `push --force`, uji DB cloud (restore, pengingat, Nota/PNL; data sementara), diagnosa |
+| `reminders.yml` | tiap 10 menit (hanya jalan dari default branch) | memicu tick pengingat supplier |
 | `diagnose.yml` | tiap 6 jam / manual | status, webhook, skema, Mini App terlayani, smoke endpoint; gagal membuat issue berlabel `diagnosa`, pulih menutupnya |
 
 Catatan:
