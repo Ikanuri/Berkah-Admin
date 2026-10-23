@@ -4,6 +4,7 @@ import '../pnl.css';
 import { h, confirmBox, toast } from '../dom.js';
 import { call } from '../api.js';
 import * as L from '../../tgcloud/lib/pnl.js';
+import { pnlReportHtml, arsipReportHtml } from '../report/legacy-report.js';
 
 const RAW_KEY = 'berkah-pnl-raw';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -153,39 +154,17 @@ function exportCsv() {
   download(`PNL_Berkah_${P.tab}_${todayInput()}.csv`, '﻿' + csv, 'text/csv;charset=utf-8;');
 }
 
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-// Laporan cetak sederhana (ringkasan + harian + mingguan + bulanan). Dibuka sebagai halaman
-// terpisah dengan tombol cetak/simpan PDF; bila popup diblokir, diunduh sebagai .html.
-function openReport(data, title) {
-  if (!data.length) { toast('Proses data dulu'); return; }
-  const s = L.summarize(data);
-  const R = L.rp;
-  const tr = (cells, cls = '') => `<tr class="${cls}">${cells.map((c, i) => `<${i ? 'td class="r"' : 'td'}>${esc(c)}</${i ? 'td' : 'td'}>`).join('')}</tr>`;
-  const table = (head, rows) => `<table><thead><tr>${head.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
-  const agg = (groups) => {
-    const t = L.summarize(groups.flatMap((g) => g.days));
-    return table(['Periode', 'Hari', 'Income', 'Kulakan', 'Gross', 'Net Pos', 'Margin%'], [
-      ...groups.map((g) => tr([g.label, g.hari, R(g.income), R(g.kulakan), R(g.gross), R(g.netPos), (g.income > 0 ? (g.gross / g.income) * 100 : 0).toFixed(1) + '%'])),
-      tr(['TOTAL', t.hari, R(t.income), R(t.kulakan), R(t.gross), R(t.netPos), t.marginP.toFixed(1) + '%'], 'tot')]);
-  };
-  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} — Toko Berkah</title>
-<style>body{font-family:Georgia,serif;color:#1a1a1a;margin:0;padding:24px;max-width:960px;margin:auto}h1{font-size:22px;margin:0}h2{font-size:15px;margin:26px 0 8px}
-.sub{color:#666;font-size:12px;margin:2px 0 14px}.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.kpi div{border:1px solid #ddd;padding:8px 10px;border-radius:6px}.kpi b{display:block;font-size:16px}.kpi span{font-size:10px;color:#777;text-transform:uppercase}
-table{border-collapse:collapse;width:100%;font-size:11.5px}th,td{padding:4px 7px;border-bottom:1px solid #e3e3e3;text-align:left}th{background:#f4f4f4;font-size:10px}.r{text-align:right;font-variant-numeric:tabular-nums}.tot td{font-weight:700;background:#f4f4f4}
-button{position:fixed;top:12px;right:12px;padding:8px 14px}@media print{button{display:none}}@media(max-width:640px){.kpi{grid-template-columns:repeat(2,1fr)}}</style></head><body>
-<button onclick="window.print()">⇩ Cetak / Simpan PDF</button><h1>Toko <i>Berkah</i> — ${esc(title)}</h1>
-<div class="sub">${esc(L.fmtTgl(data[0].ds))} – ${esc(L.fmtTgl(data.at(-1).ds))} · ${data.length} hari</div>
-<div class="kpi"><div><span>Income</span><b>${R(s.income)}</b></div><div><span>Kulakan</span><b>${R(s.kulakan)}</b></div><div><span>Gross</span><b>${R(s.gross)}</b></div><div><span>Net Position</span><b>${R(s.netPos)}</b></div>
-<div><span>Pengeluaran</span><b>${R(s.pengeluaran)}</b></div><div><span>Prive</span><b>${R(s.prive)}</b></div><div><span>Margin Performa</span><b>${s.marginP.toFixed(1)}%</b></div><div><span>Margin Cash</span><b>${s.marginC.toFixed(1)}%</b></div></div>
-<h2>Harian</h2>${table(['Tgl', 'Hari', 'Income', 'Kulakan', 'Pengeluaran', 'Prive', 'Gross', 'Net Pos', 'Margin%'], [
-    ...data.map((d) => tr([L.fmtTgl(d.ds), L.hari(d.ds), R(d.income), R(d.kulakan), R(d.totalPengeluaran), R(d.totalPrive), R(d.gross), R(d.netPos), d.marginP.toFixed(1) + '%'])),
-    tr(['TOTAL', '', R(s.income), R(s.kulakan), R(s.pengeluaran), R(s.prive), R(s.gross), R(s.netPos), s.marginP.toFixed(1) + '%'], 'tot')])}
-<h2>Mingguan</h2>${agg(L.groupDays(data, L.weekKey))}<h2>Bulanan</h2>${agg(L.groupDays(data, L.monthKey))}</body></html>`;
+// Laporan dibuka di jendela baru (Blob URL) seperti app lama; bila popup diblokir, diunduh sebagai file.
+function openHtml(html, filename) {
   const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
   const w = window.open(url, '_blank');
-  if (!w) { download('Laporan-PNL-Berkah.html', html, 'text/html'); toast('Popup diblokir — laporan diunduh sebagai file'); }
+  if (!w) { download(filename, html, 'text/html'); toast('Popup diblokir — laporan diunduh sebagai file'); }
   setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+function openReport(data) {
+  if (!data.length) { toast('Proses data dulu'); return; }
+  openHtml(pnlReportHtml(data), 'Laporan-PNL-Berkah.html');
 }
 
 // ── Tampilan Analisis ──
@@ -228,7 +207,7 @@ function analisisView(ctx) {
           h('div', { class: 'tab-bar', style: 'margin:0;' }, tabs.map(([k, l]) => h('button', { class: 'tab-btn' + (P.tab === k ? ' active' : ''), onclick: () => { P.tab = k; ctx.render(); } }, l))),
           h('div', { style: 'margin-left:auto;display:flex;gap:6px;' },
             h('button', { class: 'btn sm', id: 'pn-csv-btn', onclick: exportCsv }, '⬇ CSV'),
-            h('button', { class: 'btn sm primary', onclick: () => openReport(data, 'Laporan PNL') }, '📄 Laporan PDF'))),
+            h('button', { class: 'btn sm primary', onclick: () => openReport(data) }, '📄 Laporan PDF'))),
         h('div', { class: 'panel-body' }, h('div', { class: 'tab-panel active' }, h('div', { class: 'tbl-wrap' }, tables[P.tab]()))))) : null);
 }
 
@@ -346,16 +325,8 @@ function arsipView(ctx) {
 }
 
 function openArsipReport(entries) {
-  if (!entries.length) { toast('Tidak ada entri'); return; }
-  const rows = entries.map((e) => `<tr><td>${esc(L.dateLabel(e.ds))}</td><td>${e.j === 'p' ? 'Pengeluaran' : 'Prive'}</td><td>${esc(e.ket)}</td><td class="r">${L.rp(e.amt)}</td></tr>`).join('');
-  const tot = entries.reduce((s, e) => s + e.amt, 0);
-  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Laporan Arsip — Toko Berkah</title>
-<style>body{font-family:Georgia,serif;margin:0;padding:24px;max-width:900px;margin:auto}h1{font-size:22px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{padding:4px 7px;border-bottom:1px solid #e3e3e3;text-align:left}th{background:#f4f4f4}.r{text-align:right}.tot td{font-weight:700;background:#f4f4f4}button{position:fixed;top:12px;right:12px;padding:8px 14px}@media print{button{display:none}}</style></head><body>
-<button onclick="window.print()">⇩ Cetak / Simpan PDF</button><h1>Toko <i>Berkah</i> — Laporan Arsip</h1><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Keterangan</th><th class="r">Jumlah</th></tr></thead><tbody>${rows}<tr class="tot"><td colspan="3">TOTAL</td><td class="r">${L.rp(tot)}</td></tr></tbody></table></body></html>`;
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-  const w = window.open(url, '_blank');
-  if (!w) { download('Laporan-Arsip-Berkah.html', html, 'text/html'); toast('Popup diblokir — laporan diunduh sebagai file'); }
-  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  if (!entries.length) { toast('Tidak ada entri pada filter ini'); return; }
+  openHtml(arsipReportHtml(entries), 'Laporan-Arsip-Berkah.html');
 }
 
 export function renderPnl(ctx) {

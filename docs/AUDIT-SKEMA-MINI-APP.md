@@ -335,8 +335,8 @@ Dari kode lama yang belum tertulis di atas:
 - [x] Soft-delete supplier.
 - [x] §7 blueprint: delta-polling dipakai untuk Stok (`getChanges`) dan Nota (`notaGetState`: kamus + riwayat);
       database produk Nota dicache per versi; PNL dimuat penuh (kecil, hanya Bos).
-- [x] §9: tgcloud tidak punya cron. Tick pengingat dipicu dari polling klien (tiap ~15 poll) dan cron GitHub Actions
-      (`reminders.yml`); klaim atomik `UPDATE ... WHERE` mencegah pesan ganda (diuji di cloud).
+- [x] §9: tgcloud tidak punya cron. Tick pengingat dipicu dari polling klien (tiap ~15 poll). Cron GitHub Actions
+      (`reminders.yml`) pernah ada tetapi dihapus atas permintaan pemilik; klaim atomik `UPDATE ... WHERE` mencegah pesan ganda (diuji di cloud).
 - [x] Urutan fase §13 disetujui.
 
 ## 9. Catatan implementasi (sesi akhir)

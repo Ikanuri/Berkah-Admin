@@ -402,10 +402,25 @@ await step('Bos: PNL (proses, tabel, margin tertimbang, tambah hari, arsip + don
   await page.click('.tab-btn:text("Rincian")');
   assert.match(await page.textContent('#pn-tbl-rincian'), /Uang Indah/);
   await shot('8-pnl');
+  // laporan PDF = salinan persis app lama, dijalankan di jendela baru
+  const [rep] = await Promise.all([page.waitForEvent('popup'), page.click('.btn:text("📄 Laporan PDF")')]);
+  await rep.waitForSelector('.hero');
+  assert.match(await rep.textContent('.hero'), /Profit & Loss[\s\S]*Toko Berkah/);
+  assert.equal(await rep.locator('.kpi-card').count(), 8);
+  assert.equal(await rep.locator('.bar-row').count(), 2);
+  assert.match(await rep.textContent('.rin-day'), /Uang Indah/);
+  assert.match(await rep.textContent('.footer'), /LAPORAN PNL/);
+  if (SHOTS) await rep.screenshot({ path: `${SHOTS}/10-laporan-pnl.png`, fullPage: true });
+  await rep.close();
   await page.click('.sub-btn[data-view=arsip]');
   await page.waitForSelector('#ar-donut');
   assert.ok(await page.locator('#ar-donut path').count() >= 2, 'donut punya irisan');
   assert.match(await page.textContent('#ar-table'), /Uang Indah[\s\S]*Belanja|Belanja[\s\S]*Uang Indah/);
+  const [rep2] = await Promise.all([page.waitForEvent('popup'), page.click('.btn:text("📄 Laporan PDF")')]);
+  await rep2.waitForSelector('.hero');
+  assert.match(await rep2.textContent('.hero'), /Pengeluaran & Prive/);
+  assert.equal(await rep2.locator('.kpi-card').count(), 6);
+  await rep2.close();
   await page.fill('#ar-search', 'uang');
   await page.waitForFunction(() => !document.querySelector('#ar-table').textContent.includes('Belanja'));
   await shot('9-pnl-arsip');

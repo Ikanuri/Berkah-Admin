@@ -11,7 +11,7 @@ Semua fungsi app lama v1.5.0 sudah diport dan ter-deploy lewat GitHub Actions:
 |---|---|---|
 | Stok | Bos + Karyawan | daftar bersama, kategori, centang/qty/satuan, terima sebagian, filter tanggal, aksi massal, teks order |
 | HPP, Supplier | Bos | harga modal, margin (termasuk massal), riwayat harga supplier, tier termurah |
-| Pengingat | Bos | jadwal mingguan & sekali-jadwal per supplier, pesan Telegram ke semua Bos |
+| Pengingat | Bos | jadwal mingguan & sekali-jadwal per supplier, pesan Telegram ke semua Bos; dicek tiap ada yang membuka app (tanpa cron, lihat catatan) |
 | Nota Kulakan | Bos | impor CSV produk, pencocokan otomatis, kamus belajar, struk (cetak/WA/gambar), riwayat |
 | PNL | Bos | parser teks harian, tabel harian/mingguan/bulanan/rincian, margin tertimbang, arsip + donut, CSV, laporan |
 | Backup | Bos | export .json ke chat bot, restore merge dengan preview (format baru dan backup app lama, termasuk Nota & PNL) |
@@ -60,10 +60,10 @@ Sesudah itu semuanya otomatis:
 |---|---|---|
 | `ci.yml` | PR / push non-main | `npm test` dan E2E browser |
 | `deploy.yml` | push ke `main` / manual | test, build frontend, tulis `BOSS_IDS` ke `boss-ids.js`, cek kebocoran, `migrate --safe`, `push --force`, uji DB cloud (restore, pengingat, Nota/PNL; data sementara), diagnosa |
-| `reminders.yml` | tiap 10 menit (hanya jalan dari default branch) | memicu tick pengingat supplier |
 | `diagnose.yml` | tiap 6 jam / manual | status, webhook, skema, Mini App terlayani, smoke endpoint; gagal membuat issue berlabel `diagnosa`, pulih menutupnya |
 
 Catatan:
+- Pengingat supplier TIDAK punya pemicu terjadwal (cron Actions dihapus atas permintaan pemilik). Pengecekan terjadi tiap ~1 menit selama ada yang membuka Mini App; kalau tidak ada yang membuka app saat jamnya tiba, alarm utama baru berbunyi begitu app dibuka lagi pada hari yang sama (telat tetap berbunyi sekali per hari), sedangkan pra-alert bisa terlewat. Bila ingin pemicu mandiri, pulihkan `.github/workflows/reminders.yml` dari riwayat git (commit sebelum penghapusan).
 - Runtime tgcloud tidak punya secret/env yang terdokumentasi, jadi `BOSS_IDS` disuntikkan
   ke kode saat deploy (`scripts/ci/gen-boss-ids.mjs`). `tgcloud/lib/boss-ids.js` di repo
   hanya placeholder; jangan commit isi aslinya.
