@@ -28,9 +28,13 @@ jobs:
         run: |
           npx tgcloud push --force --debug > out.txt 2>&1 || true
           echo "== ukuran log: $(wc -c < out.txt) byte"
-          echo "== entri bernilai false:"
-          grep -oE '"[A-Za-z0-9_/.-]+": *false' out.txt | sort | uniq -c | head -30
-          echo "== baris HTTP (dipotong 200 char):"
-          grep -nE 'HTTP|POST|GET|status' out.txt | cut -c1-200 | head -20
-          echo "== sekitar canonical_modules (dipotong 400 char):"
-          grep -n 'canonical_modules' out.txt | cut -c1-400 | head -5
+          node -e '
+            const L = require("fs").readFileSync("out.txt","utf8").split("\n");
+            const line = L.find(l => l.includes("canonical_modules"));
+            if (!line) { console.log("tidak ada baris canonical_modules"); process.exit(0); }
+            const j = JSON.parse(line.slice(line.indexOf("body: ") + 6));
+            const cm = j.result.canonical_modules;
+            console.log("revision:", j.result.revision, "| kunci result:", Object.keys(j.result).join(","));
+            for (const [k, v] of Object.entries(cm)) if (typeof v !== "string") console.log("BUKAN STRING:", k, "=>", JSON.stringify(v));
+            console.log("jumlah modul:", Object.keys(cm).length, "| non-string:", Object.values(cm).filter(v => typeof v !== "string").length);
+          '
