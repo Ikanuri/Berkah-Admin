@@ -17,7 +17,7 @@ Semua fungsi app lama v1.5.0 sudah diport dan ter-deploy lewat GitHub Actions:
 | PNL | Bos | parser teks harian, tabel harian/mingguan/bulanan/rincian, margin tertimbang, arsip + donut, CSV, laporan |
 | Backup | Bos | export .json ke chat bot, restore merge dengan preview (format baru dan backup app lama, termasuk Nota & PNL) |
 
-- `tgcloud/`: schema (17 tabel), lib murni (`money`, `tier`, `rules`, `shape`, `units`, `backup`, `reminders`, `match`, `nota`, `pnl`, `receipts`), `auth`, 47 endpoint
+- `tgcloud/`: schema (17 tabel), lib murni (`money`, `tier`, `rules`, `shape`, `units`, `backup`, `reminders`, `match`, `nota`, `pnl`, `receipts`), `auth`, 46 endpoint
 - `src/` + `index.html`: Mini App (Vite, JS biasa tanpa framework), tiga modul di topbar untuk Bos (Stok, Nota, PNL)
 - `tests/`: `npm test` (lib, skrip CI, LocalStore, backup, pengingat, Nota, PNL, guard impor, sintaks) dan `npm run e2e` (Chromium, butuh browser)
 
