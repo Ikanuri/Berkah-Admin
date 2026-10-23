@@ -8,12 +8,15 @@ const t = async (name, fn) => { await fn(); n++; console.log('✓', name); };
 
 // DB memori yang meniru tabel server + antarmuka io
 class MemDb {
-  constructor() { this.categories = []; this.suppliers = []; this.items = []; this.logs = []; this.recs = []; this.ones = []; this.seq = { c: 0, s: 0 }; }
+  constructor() { this.categories = []; this.suppliers = []; this.items = []; this.logs = []; this.recs = []; this.ones = []; this.seq = { c: 0, s: 0 };
+    this.products = []; this.learn = []; this.hist = []; this.pnlDays = {}; this.pnlArsip = {}; }
   snapshot() {
     return {
       categories: this.categories.map((c) => ({ ...c })), suppliers: this.suppliers.map((s) => ({ ...s })),
       items: this.items.map((i) => ({ ...i })), priceLogIds: new Set(this.logs.map((l) => l.id)),
       remRecurring: this.recs.map((r) => ({ ...r })), remOneoffIds: this.ones.map((o) => o.id),
+      notaLearn: this.learn.map((r) => ({ ...r })), notaHistIds: this.hist.map((h) => h.id), notaProductCount: this.products.length,
+      pnlDays: Object.keys(this.pnlDays), pnlArsipDates: Object.keys(this.pnlArsip),
     };
   }
   io() {
@@ -27,6 +30,11 @@ class MemDb {
       insertLogs: async (rows) => { this.logs.push(...rows); },
       upsertRecurring: async (r) => { const i = this.recs.findIndex((x) => x.supplierId === r.supplierId); const row = { ...r, deletedAt: null }; if (i >= 0) this.recs[i] = row; else this.recs.push(row); },
       insertOneOffs: async (rows) => { this.ones.push(...rows); },
+      replaceProducts: async (rows) => { this.products = rows; },
+      upsertLearn: async (rows) => { for (const r of rows) { const c = this.learn.find((x) => x.kunci === r.kunci); if (c) Object.assign(c, r, { deletedAt: null }); else this.learn.push({ ...r, deletedAt: null }); } },
+      insertHist: async (rows) => { this.hist.push(...rows); },
+      writePnlDay: async (ds, data) => { this.pnlDays[ds] = data; },
+      writeArsipDate: async (ds, entries) => { this.pnlArsip[ds] = entries; },
     };
   }
 }
@@ -212,6 +220,7 @@ await t('FILE ASLI dari app lama v1.5.0 (tests/fixtures/legacy-backup.json) bisa
     categories: { add: 3, revive: 0 }, suppliers: { add: 3, revive: 0 },
     items: { add: 6, overwrite: 0, skip: 0 }, priceLog: { add: 4, dup: 0, orphan: 0 },
     reminders: { recurring: 1, recSkip: 0, oneOff: 1, oneDup: 0, oneExpired: 0 },
+    nota: { learn: 1, hist: 1, histDup: 0, products: 0, productsSkip: 0 }, pnl: { days: 1, daySkip: 0, arsip: 1, arsipSkip: 0 }, // file asli juga memuat Nota & PNL
   });
   assert.equal(db.logs.find((l) => l.id === 'p4').supplierId, db.suppliers.find((s) => s.name === 'Supplier Hapus').id);
   const c2 = await restore(db, real);
@@ -260,6 +269,64 @@ await t('format sendiri membawa pengingat bolak-balik', async () => {
   const c = await restore(dst, JSON.parse(JSON.stringify(json)));
   assert.deepEqual(c.reminders, { recurring: 1, recSkip: 0, oneOff: 1, oneDup: 0, oneExpired: 0 });
   assert.deepEqual(dst.recs[0].days, [1, 4]);
+});
+
+await t('Nota & PNL dari backup ASLI app lama: kamus, riwayat, hari, arsip; idempoten; keep vs overwrite', async () => {
+  const real = JSON.parse(readFileSync(new URL('./fixtures/legacy-backup.json', import.meta.url), 'utf8'));
+  const db = new MemDb();
+  const c1 = await restore(db, real);
+  assert.deepEqual(c1.nota, { learn: 1, hist: 1, histDup: 0, products: 0, productsSkip: 0 });
+  assert.deepEqual(c1.pnl, { days: 1, daySkip: 0, arsip: 1, arsipSkip: 0 });
+  assert.deepEqual(db.learn.map((l) => [l.kunci, l.nilai]), [['aqua 600ml|dos', 'Aqua 600ml']]);
+  assert.equal(db.hist[0].num, 'KLK-001'); assert.equal(db.hist[0].total, 150000);
+  assert.equal(db.pnlDays['2026-10-20'].gross, 500000);
+  assert.equal(db.pnlDays['2026-10-20'].marginP, 25);
+  assert.equal(db.pnlArsip['2026-10-20'].length, 3);
+  // kedua kali: tidak ada yang ditambah
+  const c2 = await restore(db, real);
+  assert.deepEqual([c2.nota.learn, c2.nota.hist, c2.nota.histDup, c2.pnl.days, c2.pnl.daySkip, c2.pnl.arsip, c2.pnl.arsipSkip], [0, 0, 1, 0, 1, 0, 1]);
+  assert.equal(db.hist.length, 1);
+  // overwrite menulis ulang hari/arsip yang sama dan menimpa kamus yang berbeda
+  db.pnlDays['2026-10-20'].income = 1; db.learn[0].nilai = 'lain';
+  const c3 = await restore(db, real, { onConflict: 'overwrite' });
+  assert.equal(c3.pnl.days, 1); assert.equal(db.pnlDays['2026-10-20'].income, 2000000);
+  assert.equal(db.learn[0].nilai, 'Aqua 600ml');
+});
+
+await t('database produk dari backup hanya mengisi DB kosong (kecuali overwrite); data buruk dilewati', async () => {
+  const mk = (extra) => ({ app: 'berkah-aio', stok: { boss: { cats: [], items: {} } }, nota: {
+    db: [{ nama: 'Gula', satuan: 'kg', hargaJual: 15000, hargaPokok: 12000 }, { nama: '', satuan: 'kg' }, { nama: 'X' }],
+    learn: { '': 'x', 'a|b': 'c' }, hist: [{ id: 'h9', num: 'K', lines: [] }], ...extra,
+  }, pnl: { days: { ngawur: {}, '2026-7-1': { income: 10, kulakan: 4, cash: 7 } }, arsip: { '2026-07-01': [{ j: 'x', amt: 1 }, { j: 'p', amt: 5, ket: '' }] } } });
+  const db = new MemDb();
+  const { incoming, warnings } = parseBackup(mk());
+  assert.equal(incoming.nota.products.length, 1);
+  assert.equal(incoming.nota.products[0].satClass.length > 0, true);
+  assert.equal(incoming.nota.learn.length, 1);
+  assert.equal(incoming.nota.hist.length, 0);
+  assert.deepEqual(Object.keys(incoming.pnl.days), ['2026-07-01']);
+  assert.equal(incoming.pnl.days['2026-07-01'].gross, 6);
+  assert.deepEqual(incoming.pnl.arsip['2026-07-01'], [{ j: 'p', amt: 5, ket: '-' }]);
+  assert.ok(warnings.some((w) => /Nota/.test(w)) && warnings.some((w) => /PNL/.test(w)));
+  const c = await restore(db, mk());
+  assert.equal(c.nota.products, 1); assert.equal(db.products.length, 1);
+  db.products.push({ nama: 'Lain', satuan: 'pcs' });
+  const c2 = await restore(db, mk());
+  assert.equal(c2.nota.products, 0); assert.equal(c2.nota.productsSkip, 1);
+  assert.equal(db.products.length, 2, 'DB yang sudah ada tidak disentuh');
+  const c3 = await restore(db, mk(), { onConflict: 'overwrite' });
+  assert.equal(c3.nota.products, 1); assert.equal(db.products.length, 1);
+});
+
+await t('backup format sendiri membawa Nota & PNL bolak-balik', async () => {
+  const data = makeBackup({ categories: [], items: [], suppliers: [], priceLog: [],
+    nota: { learn: [{ kunci: 'k|dus', nilai: 'Produk' }], hist: [{ id: 'z1', num: 'KLK-009', dateStr: 'd', timeStr: 't', ket: 'k', total: 10, savedAt: 5, lines: [{ nama: 'A', qty: 2, satuan: 'dus', harga: 5 }] }], products: [{ nama: 'A', satuan: 'dus', satClass: 'dus', hargaJual: 5, hargaPokok: 3, kode: null, barcode: null }] },
+    pnl: { days: { '2026-01-02': { income: 100, kulakan: 60, cash: 80, receh: 0, totalPengeluaran: 7, totalPrive: 0, rincianPengeluaran: [{ jumlah: 7, ket: 'x' }], rincianPrive: [] } }, arsip: { '2026-01-02': [{ j: 'p', amt: 7, ket: 'x' }] } } });
+  const db = new MemDb();
+  const c = await restore(db, JSON.parse(JSON.stringify(data)));
+  assert.deepEqual([c.nota.learn, c.nota.hist, c.nota.products, c.pnl.days, c.pnl.arsip], [1, 1, 1, 1, 1]);
+  assert.equal(db.hist[0].lines[0].sub, 10);
+  assert.equal(db.pnlDays['2026-01-02'].netPos, 20);
 });
 
 console.log(`\nHASIL: ${n} uji backup lulus`);

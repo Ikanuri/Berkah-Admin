@@ -113,6 +113,14 @@ jobs:
           echo "$out"
           [ $rc -eq 0 ] && grep -q "raceWinners" <<<"$out"
 
+      - name: Uji jalur DB Nota & PNL di database cloud (data sementara, dibersihkan)
+        run: |
+          cp scripts/ci/cloud-nota-pnl-test.js tgcloud/endpoints/zzCloudNotaPnlTest.js
+          out=$(npx tgcloud run endpoints/zzCloudNotaPnlTest '{}' 2>&1); rc=$?
+          rm -f tgcloud/endpoints/zzCloudNotaPnlTest.js
+          echo "$out"
+          [ $rc -eq 0 ] && grep -q "pnlArsipReplaced" <<<"$out"
+
       - name: Diagnosa pasca-deploy
         run: scripts/ci/diagnose.sh
 

@@ -177,7 +177,7 @@ await t('exportBackup + restoreApply lewat LocalStore: bulat-balik antar perangk
   await a.call('setHpp', { id: items[0].id, isi: 24, hargaBeli: 48000 });
   await a.call('savePrices', { supplierId: 1, tanggal: '2026-10-23', prices: [{ itemId: items[0].id, hargaBeli: 47000 }] });
   const out = await a.call('exportBackup', {});
-  assert.deepEqual(out.counts, { categories: 1, items: 2, suppliers: 1, priceLog: 1 });
+  assert.deepEqual(out.counts, { categories: 1, items: 2, suppliers: 1, priceLog: 1, notaHist: 0, pnlDays: 0 });
 
   const b = new LocalStore('boss', mem());
   const prev = await b.call('restorePreview', { data: out.data });

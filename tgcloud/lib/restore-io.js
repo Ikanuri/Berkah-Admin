@@ -2,21 +2,29 @@
 // rencana. Insert di-chunk karena batas variabel SQLite (baris x kolom).
 import { db } from 'sdk';
 import { eq, and, isNull } from 'sdk/db';
-import { categories, suppliers, items, priceLog, remRecurring, remOneoff } from '../schema.js';
+import { categories, suppliers, items, priceLog, remRecurring, remOneoff, notaProducts, notaMeta, notaLearn, notaHist, pnlDays, pnlArsip } from '../schema.js';
+import { upsertDay, writeArsipDate } from './pnl-store.js';
 
 const ITEM_CHUNK = 40;  // 13 kolom
 const LOG_CHUNK = 60;   // 9 kolom
 
 export async function loadExisting() {
-  const [cats, sups, its, logs, recs, ones] = await Promise.all([
+  const [cats, sups, its, logs, recs, ones, learn, hist, anyProd, pDays, pArs] = await Promise.all([
     db.select().from(categories).all(),
     db.select().from(suppliers).all(),
     db.select().from(items).all(),
     db.select({ id: priceLog.id }).from(priceLog).all(),
     db.select().from(remRecurring).all(),
     db.select({ id: remOneoff.id }).from(remOneoff).all(),
+    db.select().from(notaLearn).all(),
+    db.select({ id: notaHist.id }).from(notaHist).all(),
+    db.select({ id: notaProducts.id }).from(notaProducts).limit(1).all(),
+    db.select({ t: pnlDays.tanggal }).from(pnlDays).all(),
+    db.select({ t: pnlArsip.tanggal }).from(pnlArsip).all(),
   ]);
-  return { categories: cats, suppliers: sups, items: its, priceLogIds: logs.map((l) => l.id), remRecurring: recs, remOneoffIds: ones.map((o) => o.id) };
+  return { categories: cats, suppliers: sups, items: its, priceLogIds: logs.map((l) => l.id), remRecurring: recs, remOneoffIds: ones.map((o) => o.id),
+    notaLearn: learn, notaHistIds: hist.map((x) => x.id), notaProductCount: anyProd.length,
+    pnlDays: pDays.map((x) => x.t), pnlArsipDates: [...new Set(pArs.map((x) => x.t))] };
 }
 
 export function makeIo(now = Date.now()) {
@@ -63,6 +71,31 @@ export function makeIo(now = Date.now()) {
         }))).run();
       }
     },
+    async replaceProducts(rows) {
+      await db.run('DELETE FROM nota_products');
+      for (let i = 0; i < rows.length; i += 80) {
+        await db.insert(notaProducts).values(rows.slice(i, i + 80).map((r) => ({
+          nama: r.nama, kode: r.kode || null, barcode: r.barcode || null, satuan: r.satuan, satClass: r.satClass, hargaJual: r.hargaJual, hargaPokok: r.hargaPokok,
+        }))).run();
+      }
+      await db.insert(notaMeta).values({ key: 'db_version', value: String(now) }).onConflictDoUpdate({ target: notaMeta.key, set: { value: String(now) } }).run();
+    },
+    async upsertLearn(rows) {
+      for (const r of rows) {
+        await db.insert(notaLearn).values({ kunci: r.kunci, nilai: r.nilai, updatedAt: now, deletedAt: null })
+          .onConflictDoUpdate({ target: notaLearn.kunci, set: { nilai: r.nilai, updatedAt: now, deletedAt: null } }).run();
+      }
+    },
+    async insertHist(rows) {
+      for (let i = 0; i < rows.length; i += 40) {
+        await db.insert(notaHist).values(rows.slice(i, i + 40).map((r) => ({
+          id: r.id, num: r.num, dateStr: r.dateStr, timeStr: r.timeStr, ket: r.ket, total: r.total, savedAt: r.savedAt,
+          lines: r.lines, createdBy: null, updatedAt: now, deletedAt: null,
+        }))).run();
+      }
+    },
+    async writePnlDay(ds, data) { await upsertDay(ds, data, now); },
+    async writeArsipDate(ds, entries) { await writeArsipDate(ds, entries); },
     async insertLogs(rows) {
       for (let i = 0; i < rows.length; i += LOG_CHUNK) {
         const chunk = rows.slice(i, i + LOG_CHUNK).map((r) => ({

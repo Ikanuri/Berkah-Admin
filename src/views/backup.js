@@ -35,6 +35,8 @@ function countsTable(c) {
     row('Supplier', [c.suppliers.add && `+${c.suppliers.add} baru`, c.suppliers.revive && `${c.suppliers.revive} dihidupkan lagi`]),
     row('Barang', [c.items.add && `+${c.items.add} baru`, c.items.overwrite && `${c.items.overwrite} ditimpa`, c.items.skip && `${c.items.skip} sudah ada`]),
     row('Pengingat', c.reminders ? [c.reminders.recurring && `${c.reminders.recurring} jadwal mingguan`, c.reminders.oneOff && `${c.reminders.oneOff} sekali-jadwal`, c.reminders.recSkip && `${c.reminders.recSkip} mingguan sudah ada`, c.reminders.oneExpired && `${c.reminders.oneExpired} kedaluwarsa dilewati`] : []),
+    c.nota ? row('Nota', [c.nota.hist && `+${c.nota.hist} nota riwayat`, c.nota.learn && `${c.nota.learn} kamus`, c.nota.products && `${c.nota.products} produk`, c.nota.productsSkip && `${c.nota.productsSkip} produk dilewati (DB sudah ada)`, c.nota.histDup && `${c.nota.histDup} nota sudah ada`]) : null,
+    c.pnl ? row('PNL', [c.pnl.days && `+${c.pnl.days} hari`, c.pnl.arsip && `${c.pnl.arsip} tanggal arsip`, c.pnl.daySkip && `${c.pnl.daySkip} hari sudah ada`, c.pnl.arsipSkip && `${c.pnl.arsipSkip} arsip sudah ada`]) : null,
     row('Riwayat harga', [c.priceLog.add && `+${c.priceLog.add} baru`, c.priceLog.dup && `${c.priceLog.dup} sudah ada`, c.priceLog.orphan && `${c.priceLog.orphan} dilewati (barang tidak ada)`])));
 }
 
@@ -54,7 +56,8 @@ async function previewAndConfirm(ctx, data, filename) {
     let out;
     try { out = await call('restorePreview', { data, onConflict }); } catch (e) { box.replaceChildren(h('div', { class: 'alert alert-err' }, e.message)); return; }
     const total = out.counts.categories.add + out.counts.suppliers.add + out.counts.items.add + out.counts.items.overwrite + out.counts.priceLog.add
-      + out.counts.categories.revive + out.counts.suppliers.revive + (out.counts.reminders ? out.counts.reminders.recurring + out.counts.reminders.oneOff : 0);
+      + out.counts.categories.revive + out.counts.suppliers.revive + (out.counts.reminders ? out.counts.reminders.recurring + out.counts.reminders.oneOff : 0)
+      + (out.counts.nota ? out.counts.nota.hist + out.counts.nota.learn + out.counts.nota.products : 0) + (out.counts.pnl ? out.counts.pnl.days + out.counts.pnl.arsip : 0);
     box.replaceChildren(
       h('div', { style: 'margin-bottom:8px;' }, h('span', { class: 'badge badge-timeout' }, FORMAT_LABEL[out.format] || out.format)),
       countsTable(out.counts),
@@ -75,7 +78,7 @@ async function previewAndConfirm(ctx, data, filename) {
     if (!out) { status.textContent = 'Gagal.'; okBtn.disabled = false; return; }
     m.close();
     const c = out.counts;
-    toast(`Restore selesai: +${c.items.add} barang, ${c.items.overwrite} ditimpa, +${c.priceLog.add} riwayat harga`);
+    toast(`Restore selesai: +${c.items.add} barang, ${c.items.overwrite} ditimpa, +${c.priceLog.add} riwayat harga${c.pnl?.days ? `, +${c.pnl.days} hari PNL` : ''}${c.nota?.hist ? `, +${c.nota.hist} nota` : ''}`);
   };
   preview();
 }

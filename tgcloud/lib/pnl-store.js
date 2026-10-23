@@ -28,9 +28,12 @@ export async function writeArsipDate(ds, entries) {
   }
 }
 
-export async function writeDay(ds, data, now) {
-  const row = { tanggal: ds, ...data, updatedAt: now };
-  await db.insert(pnlDays).values(row)
+export async function upsertDay(ds, data, now) {
+  await db.insert(pnlDays).values({ tanggal: ds, ...data, updatedAt: now })
     .onConflictDoUpdate({ target: pnlDays.tanggal, set: { ...data, updatedAt: now } }).run();
+}
+
+export async function writeDay(ds, data, now) {
+  await upsertDay(ds, data, now);
   await writeArsipDate(ds, arsipOf(data));
 }

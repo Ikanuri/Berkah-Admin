@@ -329,8 +329,13 @@ export class LocalStore {
       suppliers: d.suppliers, priceLog: d.priceLog.filter((e) => !e.deletedAt),
       remRecurring: d.remRecurring.filter((r) => !r.deletedAt),
       remOneoff: d.remOneoff.filter((o) => !o.deletedAt && !o.firedAt),
+      nota: {
+        learn: d.nota.learn.filter((r) => !r.deletedAt).map((r) => ({ kunci: r.kunci, nilai: r.nilai })),
+        hist: d.nota.hist.filter((r) => !r.deletedAt), products: d.nota.products,
+      },
+      pnl: { days: d.pnl.days, arsip: d.pnl.arsip },
     });
-    const counts = { categories: data.tables.categories.length, items: data.tables.items.length, suppliers: data.tables.suppliers.length, priceLog: data.tables.priceLog.length };
+    const counts = { categories: data.tables.categories.length, items: data.tables.items.length, suppliers: data.tables.suppliers.length, priceLog: data.tables.priceLog.length, notaHist: data.tables.nota.hist.length, pnlDays: Object.keys(data.tables.pnl.days).length };
     return { sent: false, filename: 'berkah-dev.json', counts, data };
   }
 
@@ -343,6 +348,8 @@ export class LocalStore {
     const plan = planRestore({
       categories: d.categories, suppliers: d.suppliers, items: d.items, priceLogIds: d.priceLog.map((e) => e.id),
       remRecurring: d.remRecurring, remOneoffIds: d.remOneoff.map((o) => o.id),
+      notaLearn: d.nota.learn, notaHistIds: d.nota.hist.map((x) => x.id), notaProductCount: d.nota.products.length,
+      pnlDays: Object.keys(d.pnl.days), pnlArsipDates: Object.keys(d.pnl.arsip),
     }, parsed.incoming, { onConflict: mode });
     return { parsed, plan, mode };
   }
@@ -370,6 +377,14 @@ export class LocalStore {
         if (i >= 0) d.remRecurring[i] = row; else d.remRecurring.push(row);
       },
       insertOneOffs: async (rows) => rows.forEach((o) => d.remOneoff.push({ ...o, updatedAt: now, deletedAt: null })),
+      replaceProducts: async (rows) => { d.nota.products = rows.map((r) => ({ ...r })); d.nota.version = now; },
+      upsertLearn: async (rows) => rows.forEach((r) => {
+        const cur = d.nota.learn.find((x) => x.kunci === r.kunci);
+        if (cur) Object.assign(cur, { nilai: r.nilai, updatedAt: now, deletedAt: null }); else d.nota.learn.push({ ...r, updatedAt: now, deletedAt: null });
+      }),
+      insertHist: async (rows) => rows.forEach((r) => d.nota.hist.push({ ...r, createdBy: ME, updatedAt: now, deletedAt: null })),
+      writePnlDay: async (ds, data) => { d.pnl.days[ds] = data; },
+      writeArsipDate: async (ds, entries) => { if (entries.length) d.pnl.arsip[ds] = entries; else delete d.pnl.arsip[ds]; },
     });
     this.log('restore', { format: parsed.format, onConflict: mode, counts: plan.counts });
     return { format: parsed.format, warnings: parsed.warnings, onConflict: mode, counts: plan.counts };

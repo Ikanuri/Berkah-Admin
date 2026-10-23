@@ -4,7 +4,8 @@
 // balas JSON-nya supaya klien bisa mencoba unduh langsung.
 import { db, api, InputFile } from 'sdk';
 import { isNull, and } from 'sdk/db';
-import { categories, items, suppliers, priceLog, remRecurring, remOneoff } from '../schema.js';
+import { categories, items, suppliers, priceLog, remRecurring, remOneoff, notaProducts, notaLearn, notaHist } from '../schema.js';
+import { readAll as readPnl } from '../lib/pnl-store.js';
 import { requireRole, logActivity } from '../lib/auth.js';
 import { makeBackup } from '../lib/backup.js';
 
@@ -20,10 +21,16 @@ export default async function (input, ctx) {
     priceLog: await db.select().from(priceLog).where(isNull(priceLog.deletedAt)).all(),
     remRecurring: await db.select().from(remRecurring).where(isNull(remRecurring.deletedAt)).all(),
     remOneoff: await db.select().from(remOneoff).where(and(isNull(remOneoff.deletedAt), isNull(remOneoff.firedAt))).all(),
+    nota: {
+      learn: (await db.select().from(notaLearn).where(isNull(notaLearn.deletedAt)).all()).map((r) => ({ kunci: r.kunci, nilai: r.nilai })),
+      hist: await db.select().from(notaHist).where(isNull(notaHist.deletedAt)).all(),
+      products: await db.select().from(notaProducts).all(),
+    },
+    pnl: await readPnl(),
   }, now);
   const d = new Date(now + 7 * 3600000); // nama file memakai tanggal zona toko (WIB)
   const filename = `berkah-${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}.json`;
-  const counts = { categories: data.tables.categories.length, items: data.tables.items.length, suppliers: data.tables.suppliers.length, priceLog: data.tables.priceLog.length };
+  const counts = { categories: data.tables.categories.length, items: data.tables.items.length, suppliers: data.tables.suppliers.length, priceLog: data.tables.priceLog.length, notaHist: data.tables.nota.hist.length, pnlDays: Object.keys(data.tables.pnl.days).length };
   await logActivity(u.tgId, 'exportBackup', counts);
 
   if (input?.send) {

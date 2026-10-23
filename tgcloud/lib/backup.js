@@ -13,6 +13,9 @@ import { UNITS } from './units.js';
 import { normName } from './rules.js';
 import { makeId } from './id.js';
 import { validateRecurring } from './reminders.js';
+import { cleanLines } from './nota.js';
+import { satClassOf } from './match.js';
+import { canonDate, derive } from './pnl.js';
 
 export const OWN_APP = 'berkah-mini';
 export const BACKUP_VERSION = 1;
@@ -23,12 +26,12 @@ const posNum = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
 // ── Pembuat backup (format sendiri) ─────────────────────────────────────────
-export function makeBackup({ categories, items, suppliers, priceLog, remRecurring = [], remOneoff = [] }, now = Date.now()) {
+export function makeBackup({ categories, items, suppliers, priceLog, remRecurring = [], remOneoff = [], nota = null, pnl = null }, now = Date.now()) {
   return {
     app: OWN_APP,
     version: BACKUP_VERSION,
     exportedAt: new Date(now).toISOString(),
-    tables: { categories, items, suppliers, priceLog, remRecurring, remOneoff },
+    tables: { categories, items, suppliers, priceLog, remRecurring, remOneoff, nota, pnl },
   };
 }
 
@@ -85,10 +88,76 @@ function cleanOneOff(raw, supplierName, ctx) {
   return { id: str(raw.id) || makeId(), supplierName, ts, preAlertMin: pre, firedAt: posNum(raw.firedAt), preFiredAt: posNum(raw.preFiredAt) };
 }
 
+
+const fin = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+// Nota: kamus belajar (objek lama {kunci:nilai} atau larik baris), riwayat, dan database produk.
+function cleanNota(raw, ctx) {
+  const out = { learn: [], hist: [], products: [] };
+  if (!raw || typeof raw !== 'object') return out;
+  const entries = Array.isArray(raw.learn) ? raw.learn.map((r) => [r?.kunci, r?.nilai])
+    : Object.entries(raw.learn && typeof raw.learn === 'object' ? raw.learn : {});
+  const seenLearn = new Set();
+  for (const [k, v] of entries) {
+    const kunci = str(k), nilai = str(v);
+    if (!kunci || !nilai) { ctx.invalid.nota++; continue; }
+    if (seenLearn.has(kunci)) continue;
+    seenLearn.add(kunci);
+    out.learn.push({ kunci, nilai });
+  }
+  const seenHist = new Set();
+  for (const h of Array.isArray(raw.hist) ? raw.hist : []) {
+    let c;
+    try { c = cleanLines(h?.lines); } catch { ctx.invalid.nota++; continue; }
+    let id = str(h.id) || makeId();
+    if (seenHist.has(id)) id = makeId();
+    seenHist.add(id);
+    out.hist.push({
+      id, num: str(h.num) || '-', dateStr: str(h.dateStr), timeStr: str(h.timeStr), ket: str(h.ket) || 'Kulakan Harian',
+      total: c.total, savedAt: posNum(h.savedAt) ?? Date.now(), lines: c.lines,
+    });
+  }
+  for (const r of Array.isArray(raw.db) ? raw.db : Array.isArray(raw.products) ? raw.products : []) {
+    const nama = str(r?.nama), satuan = str(r?.satuan);
+    if (!nama || !satuan) { ctx.invalid.nota++; continue; }
+    out.products.push({
+      nama, satuan, satClass: str(r.satClass) || satClassOf(satuan), hargaJual: Math.max(0, fin(r.hargaJual)), hargaPokok: Math.max(0, fin(r.hargaPokok)),
+      kode: str(r.kode) || null, barcode: str(r.barcode) || null,
+    });
+  }
+  return out;
+}
+
+// PNL: hari (kunci YYYY-MM-DD) dan arsip per tanggal.
+function cleanPnl(raw, ctx) {
+  const out = { days: {}, arsip: {} };
+  if (!raw || typeof raw !== 'object') return out;
+  const rinci = (arr) => (Array.isArray(arr) ? arr : []).map((x) => ({ jumlah: fin(x?.jumlah), ket: str(x?.ket) || '-' }));
+  for (const [k, v] of Object.entries(raw.days && typeof raw.days === 'object' ? raw.days : {})) {
+    const ds = canonDate(k);
+    if (!ds || !v || typeof v !== 'object') { ctx.invalid.pnl++; continue; }
+    const rp = rinci(v.rincianPengeluaran), rv = rinci(v.rincianPrive);
+    const sumJ = (a) => a.reduce((x, r) => x + r.jumlah, 0);
+    out.days[ds] = derive({
+      income: fin(v.income), kulakan: fin(v.kulakan), cash: fin(v.cash), receh: fin(v.receh),
+      totalPengeluaran: Number.isFinite(Number(v.totalPengeluaran)) ? Number(v.totalPengeluaran) : sumJ(rp),
+      totalPrive: Number.isFinite(Number(v.totalPrive)) ? Number(v.totalPrive) : sumJ(rv),
+      rincianPengeluaran: rp, rincianPrive: rv,
+    });
+  }
+  for (const [k, list] of Object.entries(raw.arsip && typeof raw.arsip === 'object' ? raw.arsip : {})) {
+    const ds = canonDate(k);
+    if (!ds || !Array.isArray(list)) { ctx.invalid.pnl++; continue; }
+    const entries = list.filter((e) => (e?.j === 'p' || e?.j === 'v') && Number.isFinite(Number(e.amt))).map((e) => ({ j: e.j, amt: Number(e.amt), ket: str(e.ket) || '-' }));
+    if (entries.length) out.arsip[ds] = entries;
+  }
+  return out;
+}
+
 function newCtx() {
   const warnings = [];
   return {
-    warnings, ids: new Set(), invalid: { items: 0, priceLog: 0, reminders: 0 },
+    warnings, ids: new Set(), invalid: { items: 0, priceLog: 0, reminders: 0, nota: 0, pnl: 0 },
     warn: (m) => { if (!warnings.includes(m)) warnings.push(m); },
   };
 }
@@ -97,11 +166,13 @@ function finish(format, ctx, incoming) {
   if (ctx.invalid.items) ctx.warn(`${ctx.invalid.items} barang tidak valid dilewati`);
   if (ctx.invalid.priceLog) ctx.warn(`${ctx.invalid.priceLog} entri harga tidak valid dilewati`);
   if (ctx.invalid.reminders) ctx.warn(`${ctx.invalid.reminders} jadwal pengingat tidak valid dilewati`);
+  if (ctx.invalid.nota) ctx.warn(`${ctx.invalid.nota} data Nota tidak valid dilewati`);
+  if (ctx.invalid.pnl) ctx.warn(`${ctx.invalid.pnl} data PNL tidak valid dilewati`);
   return { format, incoming, warnings: ctx.warnings };
 }
 
 // ── Format lama (berkah-aio v1 dan "Backup Stok") ───────────────────────────
-function fromLegacyStok(stok, supplierNames, pricelog, reminders) {
+function fromLegacyStok(stok, supplierNames, pricelog, reminders, extra = {}) {
   const ctx = newCtx();
   const excluded = new Set((Array.isArray(stok.outCatEx) ? stok.outCatEx : []).map(normName));
   const cats = [];
@@ -144,7 +215,8 @@ function fromLegacyStok(stok, supplierNames, pricelog, reminders) {
     if (rem.recurring) { const r = cleanRecurring(rem.recurring, name, ctx); if (r) remRecurring.push(r); }
     for (const o of Array.isArray(rem.oneOff) ? rem.oneOff : []) { const r = cleanOneOff(o || {}, name, ctx); if (r) remOneoff.push(r); }
   }
-  return finish('berkah-aio', ctx, { categories, items, suppliers, priceLog, remRecurring, remOneoff });
+  const nota = cleanNota(extra.nota, ctx), pnl = cleanPnl(extra.pnl, ctx);
+  return finish('berkah-aio', ctx, { categories, items, suppliers, priceLog, remRecurring, remOneoff, nota, pnl });
 }
 
 // ── Format sendiri ──────────────────────────────────────────────────────────
@@ -183,7 +255,8 @@ function fromOwn(data) {
     const r = name ? cleanOneOff(raw, name, ctx) : (ctx.invalid.reminders++, null);
     if (r) remOneoff.push(r);
   }
-  return finish(OWN_APP, ctx, { categories, items, suppliers, priceLog, remRecurring, remOneoff });
+  const nota = cleanNota(t.nota, ctx), pnl = cleanPnl(t.pnl, ctx);
+  return finish(OWN_APP, ctx, { categories, items, suppliers, priceLog, remRecurring, remOneoff, nota, pnl });
 }
 
 export function parseBackup(data) {
@@ -194,7 +267,7 @@ export function parseBackup(data) {
   }
   if (data.app === 'berkah-aio') {
     if (!data.stok?.boss) throw new Error('Backup ini tidak berisi data Stok');
-    return fromLegacyStok(data.stok.boss, data.stok.suppliers, data.stok.pricelog, data.stok.reminders);
+    return fromLegacyStok(data.stok.boss, data.stok.suppliers, data.stok.pricelog, data.stok.reminders, { nota: data.nota, pnl: data.pnl });
   }
   if (Array.isArray(data.cats) && data.items && typeof data.items === 'object') {
     return fromLegacyStok(data, data.hppSuppliers, data.hppLog, data.hppReminders); // "Backup Stok" app lama
@@ -212,6 +285,8 @@ export function planRestore(existing, incoming, { onConflict = 'keep', now = Dat
     items: { add: [], overwrite: [], skip: 0, idMap: {} },
     priceLog: { add: [], dup: 0, orphan: 0 },
     reminders: { recurring: [], oneOff: [], recSkip: 0, oneDup: 0, oneExpired: 0 },
+    nota: { learn: [], learnSame: 0, hist: [], histDup: 0, products: null, productsSkip: 0 },
+    pnl: { days: [], daySkip: 0, arsip: [], arsipSkip: 0 },
   };
 
   // kategori: dicocokkan lewat NAMA (app lama tidak punya id kategori)
@@ -300,12 +375,43 @@ export function planRestore(existing, incoming, { onConflict = 'keep', now = Dat
     plan.reminders.oneOff.push(o);
   }
 
+  // Nota: kamus = union per kunci; riwayat = union per id (yang pernah dihapus tidak hidup lagi);
+  // database produk hanya diisi bila kosong (atau 'overwrite').
+  const inN = incoming.nota || { learn: [], hist: [], products: [] };
+  const liveLearn = new Map((existing.notaLearn || []).filter((r) => !r.deletedAt).map((r) => [r.kunci, r.nilai]));
+  for (const l of inN.learn) {
+    const cur = liveLearn.get(l.kunci);
+    if (cur === undefined || (overwrite && cur !== l.nilai)) plan.nota.learn.push(l); else plan.nota.learnSame++;
+  }
+  const knownHist = new Set(existing.notaHistIds || []);
+  for (const hh of inN.hist) {
+    if (knownHist.has(hh.id)) { plan.nota.histDup++; continue; }
+    knownHist.add(hh.id);
+    plan.nota.hist.push(hh);
+  }
+  if (inN.products.length) {
+    if (!(existing.notaProductCount > 0) || overwrite) plan.nota.products = inN.products; else plan.nota.productsSkip = inN.products.length;
+  }
+
+  // PNL: hari dan arsip per tanggal; tanggal yang sudah ada dipertahankan kecuali 'overwrite'.
+  const inP = incoming.pnl || { days: {}, arsip: {} };
+  const haveDays = new Set(existing.pnlDays || []);
+  const haveArs = new Set(existing.pnlArsipDates || []);
+  for (const [ds, data] of Object.entries(inP.days)) {
+    if (haveDays.has(ds) && !overwrite) plan.pnl.daySkip++; else plan.pnl.days.push({ ds, data });
+  }
+  for (const [ds, entries] of Object.entries(inP.arsip)) {
+    if (haveArs.has(ds) && !overwrite) plan.pnl.arsipSkip++; else plan.pnl.arsip.push({ ds, entries });
+  }
+
   plan.counts = {
     categories: { add: plan.categories.add.length, revive: plan.categories.revive.length },
     suppliers: { add: plan.suppliers.add.length, revive: plan.suppliers.revive.length },
     items: { add: plan.items.add.length, overwrite: plan.items.overwrite.length, skip: plan.items.skip },
     priceLog: { add: plan.priceLog.add.length, dup: plan.priceLog.dup, orphan: plan.priceLog.orphan },
     reminders: { recurring: plan.reminders.recurring.length, recSkip: plan.reminders.recSkip, oneOff: plan.reminders.oneOff.length, oneDup: plan.reminders.oneDup, oneExpired: plan.reminders.oneExpired },
+    nota: { learn: plan.nota.learn.length, hist: plan.nota.hist.length, histDup: plan.nota.histDup, products: plan.nota.products ? plan.nota.products.length : 0, productsSkip: plan.nota.productsSkip },
+    pnl: { days: plan.pnl.days.length, daySkip: plan.pnl.daySkip, arsip: plan.pnl.arsip.length, arsipSkip: plan.pnl.arsipSkip },
   };
   plan.catByName = Object.fromEntries([...catByName].map(([k, c]) => [k, c.id]));
   plan.supByName = Object.fromEntries([...supByName].map(([k, s]) => [k, s.id]));
@@ -315,7 +421,8 @@ export function planRestore(existing, incoming, { onConflict = 'keep', now = Dat
 // ── Penerap rencana ─────────────────────────────────────────────────────────
 // io (async): insertCategory(row)->id, reviveCategory(id), insertSupplier({name,deleted})->id,
 //   reviveSupplier(id), insertItems(rows), updateItem(id, patch), insertLogs(rows),
-//   upsertRecurring(row), insertOneOffs(rows)
+//   upsertRecurring(row), insertOneOffs(rows), replaceProducts(rows), upsertLearn(rows),
+//   insertHist(rows), writePnlDay(ds, data), writeArsipDate(ds, entries)
 export async function applyPlan(plan, io) {
   const catId = new Map(Object.entries(plan.catByName));
   const supId = new Map(Object.entries(plan.supByName));
@@ -351,5 +458,10 @@ export async function applyPlan(plan, io) {
       return { ...rest, supplierId: supId.get(normName(supplierName)) };
     }));
   }
+  if (plan.nota.products) await io.replaceProducts(plan.nota.products);
+  if (plan.nota.learn.length) await io.upsertLearn(plan.nota.learn);
+  if (plan.nota.hist.length) await io.insertHist(plan.nota.hist);
+  for (const d of plan.pnl.days) await io.writePnlDay(d.ds, d.data);
+  for (const a of plan.pnl.arsip) await io.writeArsipDate(a.ds, a.entries);
   return plan.counts;
 }
