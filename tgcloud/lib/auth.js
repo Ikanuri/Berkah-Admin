@@ -17,7 +17,13 @@ export async function currentUser(ctx) {
       tgId: tg.id, name, username: tg.username ?? null, role, createdAt: now, updatedAt: now,
     }).run();
     u = { tgId: tg.id, name, username: tg.username ?? null, role, createdAt: now, updatedAt: now };
-  } else if (BOSS_IDS.includes(tg.id) && u.role !== 'boss') {
+  } else if (tg.is_ci !== true && (u.name !== name || (u.username ?? null) !== (tg.username ?? null))) {
+    // nama/username Telegram bisa berubah; ikuti yang terbaru. Identitas smoke test
+    // CI (is_ci, hanya bisa disuntik lewat `tgcloud run` bertoken) tidak menimpa profil.
+    await db.update(users).set({ name, username: tg.username ?? null, updatedAt: now }).where(eq(users.tgId, tg.id)).run();
+    u = { ...u, name, username: tg.username ?? null };
+  }
+  if (u.role !== 'boss' && BOSS_IDS.includes(tg.id)) {
     // ID di konfigurasi selalu Bos, apa pun isi tabel
     await db.update(users).set({ role: 'boss', updatedAt: now }).where(eq(users.tgId, tg.id)).run();
     u = { ...u, role: 'boss' };

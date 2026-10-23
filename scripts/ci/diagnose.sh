@@ -33,7 +33,7 @@ if [ -z "$FIRST_BOSS" ]; then
 fi
 
 if [ "$FAILS" -eq 0 ]; then
-  CTX="{ initData: { user: { id: $FIRST_BOSS, first_name: \"CI\" } } }"
+  CTX="{ initData: { user: { id: $FIRST_BOSS, first_name: \"CI\", is_ci: true } } }"
   check "Status proyek vs cloud" - - -- npx tgcloud status
   check "Webhook sinkron dengan handler" - 'OUT OF SYNC' -- npx tgcloud webhook
   check "Skema DB sinkron" 'No schema changes' - -- npx tgcloud migrate --local --dry-run
