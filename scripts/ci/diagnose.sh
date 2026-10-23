@@ -12,7 +12,7 @@ log() { printf '%s\n' "$*" >> "$REPORT"; }
 check() { # check <judul> <pola-harus-ada|-> <pola-tidak-boleh-ada|-> -- perintah...
   local title=$1 must=$2 mustnot=$3; shift 4
   local out rc
-  out=$("$@" 2>&1); rc=$?
+  out=$("$@" 2>&1) && rc=0 || rc=$?
   local ok=1
   [ $rc -ne 0 ] && ok=0
   [ "$must" != "-" ] && ! grep -qE "$must" <<<"$out" && ok=0

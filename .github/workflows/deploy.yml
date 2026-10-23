@@ -84,7 +84,7 @@ jobs:
           # semua modul tetapi CLI crash saat menulis snapshot lokal (canonical_modules berisi
           # `false`). Itu bukan kegagalan deploy; karena itu error khas ini TIDAK langsung
           # dianggap sukses: hasilnya diverifikasi lewat fetch + status (cloud == berkas lokal).
-          out=$(npx tgcloud push --force 2>&1); rc=$?
+          out=$(npx tgcloud push --force 2>&1) && rc=0 || rc=$?
           echo "$out"
           if [ $rc -ne 0 ]; then
             if grep -q "snapshot.js" <<<"$out" && grep -q "ERR_INVALID_ARG_TYPE" <<<"$out"; then
@@ -100,7 +100,7 @@ jobs:
       - name: Uji restore di database cloud (data sementara, dibersihkan)
         run: |
           cp scripts/ci/cloud-restore-test.js tgcloud/endpoints/zzCloudRestoreTest.js
-          out=$(npx tgcloud run endpoints/zzCloudRestoreTest '{}' 2>&1); rc=$?
+          out=$(npx tgcloud run endpoints/zzCloudRestoreTest '{}' 2>&1) && rc=0 || rc=$?
           rm -f tgcloud/endpoints/zzCloudRestoreTest.js
           echo "$out"
           [ $rc -eq 0 ] && grep -q "idempotent" <<<"$out"
@@ -108,7 +108,7 @@ jobs:
       - name: Uji klaim pengingat di database cloud (data sementara, tanpa kirim pesan)
         run: |
           cp scripts/ci/cloud-reminder-test.js tgcloud/endpoints/zzCloudReminderTest.js
-          out=$(npx tgcloud run endpoints/zzCloudReminderTest '{}' 2>&1); rc=$?
+          out=$(npx tgcloud run endpoints/zzCloudReminderTest '{}' 2>&1) && rc=0 || rc=$?
           rm -f tgcloud/endpoints/zzCloudReminderTest.js
           echo "$out"
           [ $rc -eq 0 ] && grep -q "raceWinners" <<<"$out"
@@ -116,7 +116,7 @@ jobs:
       - name: Uji jalur DB Nota & PNL di database cloud (data sementara, dibersihkan)
         run: |
           cp scripts/ci/cloud-nota-pnl-test.js tgcloud/endpoints/zzCloudNotaPnlTest.js
-          out=$(npx tgcloud run endpoints/zzCloudNotaPnlTest '{}' 2>&1); rc=$?
+          out=$(npx tgcloud run endpoints/zzCloudNotaPnlTest '{}' 2>&1) && rc=0 || rc=$?
           rm -f tgcloud/endpoints/zzCloudNotaPnlTest.js
           echo "$out"
           [ $rc -eq 0 ] && grep -q "pnlArsipReplaced" <<<"$out"
