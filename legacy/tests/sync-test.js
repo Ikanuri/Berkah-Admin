@@ -6,7 +6,7 @@
 // browser terpisah (localStorage terpisah beneran), fungsi aslinya dipanggil
 // apa adanya, cuma transport WebRTC-nya yang di-skip.
 const { chromium } = require('playwright');
-const HTML = require('path').join(__dirname, '..', 'index.html');
+const HTML = require('path').join(__dirname, '..', 'berkah-admin-1.5.0.html');
 const res = [];
 const check = (n, c, x) => { res.push(!!c); console.log((c?'✓':'✗')+' '+n+(x!==undefined?' — '+x:'')); };
 

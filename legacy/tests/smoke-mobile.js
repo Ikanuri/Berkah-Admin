@@ -1,7 +1,7 @@
 // Smoke test MOBILE (390×844): nav bawah, kalkulator terpusat & stabil, seekbar, gesture PIN
 const { chromium } = require('playwright');
 const fs = require('fs');
-const HTML = require('path').join(__dirname, '..', 'index.html');
+const HTML = require('path').join(__dirname, '..', 'berkah-admin-1.5.0.html');
 const CSV = require('path').join(__dirname, '..', 'data', 'Products.csv');
 const TEMPLATE = fs.readFileSync(__dirname + '/template.txt', 'utf8').trim();
 

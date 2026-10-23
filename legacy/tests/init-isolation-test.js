@@ -6,7 +6,7 @@
 // 5-tap Mode Bos di Stok Kosong jadi mati total, tanpa pesan error ke user.
 // Fix: initModuleSafe() mengisolasi tiap init modul (lihat DOKUMENTASI-TEKNIS §9).
 const { chromium } = require('playwright');
-const HTML = require('path').join(__dirname, '..', 'index.html');
+const HTML = require('path').join(__dirname, '..', 'berkah-admin-1.5.0.html');
 const res = [];
 const check = (n, c, x) => { res.push(!!c); console.log((c?'✓':'✗')+' '+n+(x!==undefined?' — '+x:'')); };
 

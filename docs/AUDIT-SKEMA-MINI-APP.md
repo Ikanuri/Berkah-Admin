@@ -129,6 +129,12 @@ bentrok dan mengisi `checkedAt`, jadi importer perlu melakukan hal yang sama.
 | Restore backup | Merge dengan preview (kunci: `items.id`, `price_log.id`, tanggal PNL, `nota_learn.kunci`), bukan full-overwrite |
 | Frontend | Dengan build step (Vite); target kedua `offline.html` satu file via adapter penyimpanan `RemoteStore`/`LocalStore`, logika bisnis dipakai bersama |
 | Permission | Pengecekan role di server per endpoint + pembuangan field modal untuk `worker`; user baru berstatus `pending` sampai disetujui Bos; `activity_log` |
+| Penerima pengingat | Semua Bos |
+| Supplier terhapus | Soft delete (`deleted_at`); riwayat harga tetap |
+| Akses PNL | Bos saja |
+| Akses Nota | Belum diputuskan (usulan: karyawan boleh, tanpa `harga_pokok`) |
+| Parser angka PNL | Belum diputuskan (lihat 7.6) |
+| Urutan fase | V1 Stok+HPP+Supplier, V2 pengingat, V3 Nota, V4 PNL |
 
 ## 7. Audit v1.5.0: Pengingat, Tier, HPP, alur order (`legacy/berkah-admin-1.5.0.html`)
 
@@ -292,15 +298,43 @@ Alur dan aturan yang harus dibawa:
   data sensitif, tetapi kode lama tidak menguncinya per peran. Mini App sebaiknya
   boss-only. Perlu keputusan Anda.
 
+### 7.7 Temuan tambahan saat menulis V1 dan dokumentasi tgcloud
+
+Dari `core.telegram.org/bots/serverless` (dibaca langsung):
+- **Tidak ada cron/timer terdokumentasi.** Handler hanya dipicu update Telegram,
+  endpoint hanya oleh panggilan Mini App. Pengingat (V2) harus diakali: tick
+  dipicu dari polling klien, atau Bos membuka app. Pengingat TIDAK terjamin
+  bunyi saat tidak ada yang membuka app. Ini lebih lemah dari yang disiratkan blueprint §3.7.
+- **Tidak ada API transaksi terdokumentasi.** "Ganti utuh per tanggal" (PNL) dan
+  multi-langkah (simpan harga + timpa Harga Beli) tidak atomik. Endpoint V1 dibuat
+  idempoten sejauh mungkin; kegagalan di tengah bisa meninggalkan log tanpa
+  update Harga Beli. Kalau perlu atomik, tes `db.batch`/raw SQL multi-statement
+  lewat `tgcloud run` sebelum mengandalkannya.
+- Tidak ada `npm`, tidak ada FK; id lain dipakai sebagai `text`.
+
+Dari kode lama yang belum tertulis di atas:
+- **Urutan manual barang dalam kategori** (`skReorder`, baris 4515) ada, jadi
+  `items.sort_order` ditambahkan (tidak ada di sketsa blueprint).
+- **`skState.log`**: teks "qty satuan nama" yang ditambah saat Bos MEMBATALKAN
+  centang (`skAppendLog`, 4782-). Di V1 diganti entri `activity_log`
+  (`receivedLog:true`), bukan tabel sendiri. Pemenuhan lewat balasan
+  (`skProcessReply`) di app lama TIDAK menulis log; `fulfillItem` V1 menulis
+  `activity_log` (`fulfill`) sehingga lebih lengkap. Konfirmasi kalau tidak diinginkan.
+- Hapus kategori: minimal 1 tersisa, barang di dalamnya ikut dihapus (tombstone).
+  Hanya Bos.
+- Tambah barang dengan nama yang sama (trim + huruf kecil, tanpa merapatkan spasi)
+  di kategori itu memperbarui qty/satuan; centang dipertahankan hanya jika pelakunya Bos.
+- Penyimpangan sengaja dari app lama: `fmtNum` tidak lagi menampilkan "-0".
+
 ## 8. Item §15 yang masih terbuka
 
 - [x] Rekomendasi 7.4 disetujui: satu daftar bersama, salin teks order tetap ada, `fulfillItem` menggantikan `processReply`.
-- [ ] Siapa yang boleh memakai modul Nota dan PNL (7.5, 7.6). Usulan: PNL boss-only; Nota boleh worker tanpa `harga_pokok`.
+- [x] PNL boss-only (diputuskan). [ ] Nota: usulan boleh worker tanpa `harga_pokok`.
 - [ ] Parser angka PNL tetap integer atau diganti (7.6).
-- [ ] Siapa yang menerima pesan pengingat via Bot API (semua Bos atau pembuat jadwal).
-- [ ] Soft-delete supplier vs snapshot nama di `price_log` (7.1).
+- [x] Pengingat dikirim ke semua Bos.
+- [x] Soft-delete supplier.
 - [ ] §7 blueprint: tabel mana yang delta-polling. Usulan: `items`, `price_log`,
       `nota_learn` pakai `updated_at`/`since`; tabel kecil (`categories`, `suppliers`) fetch penuh.
 - [ ] §9: apakah `tgcloud` punya cron (butuh baca dokumentasi di luar halaman yang sudah dibaca).
       Jika tidak, tick pengingat bisa dipicu dari polling klien, dengan jendela 7.1 mencegah bunyi ganda.
-- [ ] Urutan fase §13 (usulan blueprint tidak dibantah, tapi belum dikonfirmasi).
+- [x] Urutan fase §13 disetujui.

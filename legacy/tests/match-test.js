@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'berkah-admin-1.5.0.html'), 'utf8');
 const m = html.match(/\/\*ENGINE-START\*\/([\s\S]*?)\/\*ENGINE-END\*\//);
 if (!m){ console.error('Marker ENGINE tidak ditemukan di index.html'); process.exit(1); }
 const ctx = {};

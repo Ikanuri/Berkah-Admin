@@ -1,74 +1,35 @@
-# Toko Berkah — All-in-One App
+# Toko Berkah Mini
 
-Satu file HTML berisi tiga tools operasional Toko Berkah:
+Telegram Mini App di atas Telegram Serverless (`tgcloud`) untuk Stok + HPP + Supplier,
+dengan banyak pengguna pada satu database. Pengganti app single-file lama.
 
-| Modul | Fungsi |
-|---|---|
-| **Nota Kulakan** | Daftar belanja teks bebas → dicocokkan ke database produk (CSV) → nota thermal, print, share WA (teks/gambar), riwayat |
-| **PNL Analyzer** | Template harian ber-hashtag → tabel harian/mingguan/bulanan/rincian, filter tanggal, export CSV, laporan PDF |
-| **Stok Kosong** | Checklist stok kosong dua mode (Bos ↔ Karyawan), PIN + session timeout, sync antar device via WebRTC. Sub-tab **HPP** (kalkulator harga pokok + margin, export `.xlsx`) & **Supplier** (banding harga antar supplier, khusus Mode Bos) |
+## Status
 
-## Cara pakai
+V1 backend (belum ada frontend, belum pernah di-deploy):
 
-Buka `index.html` di browser (HP/desktop) — tanpa install, tanpa server, offline.
+- `tgcloud/schema.js`: users, categories, items, suppliers, price_log, activity_log
+- `tgcloud/lib/`: `money`, `tier`, `rules`, `shape` (permission), `auth`, `store`, `config`
+- `tgcloud/endpoints/`: 21 endpoint (stok, HPP, supplier, pengguna, `getChanges` untuk polling)
+- `tests/`: uji lib murni dan cek sintaks (`npm test`)
 
-1. **Nota Kulakan**: upload `Products.csv` sekali (tersimpan permanen di localStorage) → tulis daftar `qty satuan nama` → Proses → review → Generate.
-2. **PNL**: paste template harian → Proses.
-3. **Stok Kosong**: ketuk tab "Stok Kosong" 5× cepat untuk Mode Bos (PIN).
+Belum ada: frontend (Vite), export/restore/import backup, pengingat (V2), Nota (V3), PNL (V4).
 
-Data existing dari app Stok Kosong lama terbaca langsung (kunci localStorage sama).
+## Sebelum deploy pertama
 
-## Mesin pencocokan Nota Kulakan
+1. Isi `BOSS_IDS` di `tgcloud/lib/config.js` dengan telegram_user_id pemilik.
+2. Buat bot di @BotFather, aktifkan Serverless, `npx tgcloud login` (interaktif).
+3. `npx tgcloud migrate` lalu `npx tgcloud push`. Kode dan skema dideploy terpisah.
 
-Rebuild total dari versi lama yang sering salah baris harga. Aturan inti:
+## Dokumen
 
-1. **Satuan user menentukan baris harga** — `1 slp 76 12` pasti mengambil baris Slop (156.000), bukan Pak (15.600). `pres` = `slop`.
-2. **Angka ukuran harus cocok persis** — `Tinta 10kg` tidak akan jatuh ke "Tinta 1 kg".
-3. **Substring hanya di batas kata** — "King" tidak cocok ke "Ba**king** Powder".
-4. **Normalisasi gabung kata** — "Jasjus" ketemu "Jas Jus".
-5. **Ragu tidak pernah diisi diam-diam** — status kuning/merah wajib dikonfirmasi.
-6. **Kamus belajar** — koreksi manual di dropdown diingat permanen.
+- `docs/AUDIT-SKEMA-MINI-APP.md`: audit app lama, keputusan, dan item terbuka
+- `legacy/`: app lama v1.5.0 (`berkah-admin-1.5.0.html`), tes lamanya, dan `data/Products.csv`.
+  Acuan perilaku; jalankan `node legacy/tests/match-test.js`.
+- `docs/DOKUMENTASI-TEKNIS.md`, `docs/PANDUAN-PENGGUNA.md`: dokumentasi app lama
 
-Hasil uji terhadap template kulakan nyata (43 baris, 2.774 produk): **43/43 sesuai harapan, 34 hijau otomatis** (mesin lama: ±26 benar dengan error senyap hingga 46× lipat harga).
+## Aturan yang dibawa dari app lama
 
-### Skema CSV produk
-
-```
-nama,kode_produk,barcode,satuan,harga_jual,harga_beli,induk_nama,induk_kode,satuan_dasar,rasio
-```
-
-Kolom `satuan` sudah berupa label teks langsung (`Slop`, `Pak`, `Biji`, …) — tidak perlu derivasi/tebakan dari kode angka POS.
-
-## Testing
-
-```bash
-# uji mesin pencocokan (43 kasus, diekstrak langsung dari index.html)
-node tests/match-test.js
-
-# uji aritmatika uang HPP — parser desimal, pembulatan, round-trip
-node tests/hpp-math-test.js
-
-# uji isolasi init — satu modul gagal tidak boleh mematikan modul lain
-node tests/init-isolation-test.js
-
-# uji fitur sync (full + partial, termasuk HPP) — dua/tiga "device" simulasi
-node tests/sync-test.js
-
-# smoke test end-to-end (butuh playwright + chromium)
-node tests/smoke.js
-node tests/smoke-mobile.js
-```
-
-## Struktur
-
-```
-index.html                   ← aplikasi lengkap (single file, vanilla JS, tanpa build)
-data/Products.csv            ← data produk toko, skema rujukan (database uji)
-tests/                       ← test harness Node + Playwright
-docs/DOKUMENTASI-TEKNIS.md   ← arsitektur, mesin pencocokan, aturan wajib, riwayat bug
-docs/PANDUAN-PENGGUNA.md     ← panduan pemakaian lengkap (bahasa santai)
-```
-
----
-
-✳ Dibangun bersama **Claude Fable 5** (Anthropic) · Juli 2026
+Angka uang lewat `lib/money.js`, bukan `parseFloat`. Nilai presisi disimpan, pembulatan
+hanya saat tampil. Harga terakhir dari supplier menimpa Harga Beli. Seri harga termurah
+ditulis "N supplier". Karyawan tidak pernah menerima field modal: disaring di server
+(`lib/shape.js`), bukan disembunyikan di UI.

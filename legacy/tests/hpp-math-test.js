@@ -1,7 +1,7 @@
 // AUDIT aritmatika HPP — fungsi DIEKSTRAK LANGSUNG dari index.html hasil build,
 // bukan disalin ulang, supaya yang diuji benar-benar kode yang dikirim.
 const fs = require('fs');
-const src = fs.readFileSync(require('path').join(__dirname,'..','index.html'), 'utf8');
+const src = fs.readFileSync(require('path').join(__dirname,'..', 'berkah-admin-1.5.0.html'), 'utf8');
 
 function grab(name){
   const i = src.indexOf('function ' + name + '(');

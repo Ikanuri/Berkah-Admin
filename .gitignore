@@ -1,2 +1,4 @@
-tests/shot-*.png
 node_modules/
+.tgcloud/
+dist/
+tests/shot-*.png
