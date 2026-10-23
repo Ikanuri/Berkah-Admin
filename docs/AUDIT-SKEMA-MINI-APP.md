@@ -83,8 +83,8 @@ Baris DB produk sebenarnya (dok teknis §5, "Struktur baris DB"):
 { nama, hargaJual, hargaPokok, satuan, satClass, kode, barcode }
 ```
 
-Kolom di blueprint `induk_nama`, `induk_kode`, `satuan_dasar`, `rasio` **tidak
-ada** di app lama. Pakai kolom yang nyata: `nama, harga_jual, harga_pokok,
+Kolom `induk_nama`, `induk_kode`, `satuan_dasar`, `rasio` memang ada di **CSV**,
+tetapi `parseProductsCSV` membuangnya dan tidak pernah disimpan. Di tabel tidak perlu ada. Pakai kolom yang nyata: `nama, harga_jual, harga_pokok,
 satuan, sat_class, kode, barcode`. `_tok`/`_nn` adalah cache runtime, jangan
 disimpan. `nota_dbmeta` (`{count, updated}`) turunan: cukup hitung dari tabel,
 atau satu baris di tabel `meta`.
@@ -208,9 +208,95 @@ Murni, mudah dipindah ke `lib/tier.js`:
   atas. Yang dihapus hanya `skWorker` sebagai state terpisah.
   **Menunggu persetujuan Anda.**
 
+### 7.5 Nota Kulakan (baris 1730-2094 mesin, 2103-2700 UI)
+
+**Mesin pencocokan murni dan siap dipindah.** Blok `/*ENGINE-START*/..
+/*ENGINE-END*/` (baris 1730-2094) tidak memuat satu pun rujukan
+`document`/`localStorage`/`window`/`$()`. `tests/match-test.js` dijalankan
+terhadap file v1.5.0 ini (jalur dibelokkan sementara, tidak disimpan):
+**43/43 sesuai harapan, 34 hijau otomatis**. Jadi mesin bisa jadi
+`lib/match.js` yang dipakai klien dan `offline.html`, dan test-nya ikut dipindah.
+
+Isi mesin: `SAT_CLASS` (kelas satuan), `PHRASE_SYNONYMS`, `TYPO_MAP`,
+`NOISE_WORDS`, `VARIANT_SOFT`, `normalizeName`, `tokenizeName`, `nameScore`
+(bigram), `matchProduct(db, nama, satuan, learnDict)`, `parseKulakanLine`,
+`parseProductsCSV`. Ambang status: skor >= 0.85 `ok`, >= 0.45 `ambiguous`,
+selain itu `notfound`; plus `satuan_missing`. Ambang dan selisih 0.155 pada
+keputusan satuan-sadar adalah hasil bug nyata, jangan diubah tanpa test.
+
+Alur dan aturan yang harus dibawa:
+- **Pencocokan jalan di klien**, bukan di endpoint: butuh seluruh DB (2.774 baris,
+  CSV 134 KB) sebagai pembanding per baris input. Klien mengunduh `nota_db`
+  sekali lalu menyimpannya di memori/IndexedDB. Kirim hanya perubahan lewat
+  `updated_at`/`since`. Tidak perlu endpoint pencocokan.
+- Satuan yang tampil di nota **selalu persis ketikan user**; harga diambil dari
+  `sel.hargaJual`. Item yang belum `ok` dan belum dikonfirmasi ditandai `?`
+  (`flag`) di nota, bukan ditebak senyap.
+- **Kamus belajar** hanya ditulis saat user memilih manual (`nkPickRow`):
+  `kunci = tokenNama|kelasSatuan`, `nilai = row.nama` (string nama produk).
+  Nilai menunjuk **nama**, bukan id, jadi setelah CSV baru diimpor entri bisa
+  menggantung; mesin aman karena hanya memberi skor 1.0 bila nama masih ada.
+  Biarkan begitu, jangan tambah FK.
+- **Impor CSV mengganti seluruh DB** (`nkHandleCsvFile`), bukan merge. Untuk
+  multi-user ini aksi Bos saja dan perlu konfirmasi. Tulis dalam batch/chunk
+  (limit variabel SQLite, blueprint §9).
+- `hargaPokok` disimpan tetapi **tidak dipakai UI Nota** mana pun, dan di CSV
+  sebenarnya placeholder: dari 2.774 baris, hanya 586 bernilai > 1 (sisanya 0
+  atau 1). Itu harga modal, jadi **jangan dikirim ke `worker`** (aturan §6) atau
+  tidak usah dibawa sama sekali. Rekomendasi: bawa sebagai kolom `harga_pokok`
+  tapi boss-only.
+- **Kunci keputusan yang belum ada di app lama: siapa yang boleh memakai Nota?**
+  Kode lama tidak membatasi modul Nota per peran. Perlu keputusan Anda.
+- `nkToPnl` hanya menyalin teks `#kulakan <total dibulatkan>` ke clipboard
+  untuk ditempel manual di PNL. Tidak ada tautan data. Di Mini App boleh tetap
+  begitu (tanpa tabel penghubung).
+- Riwayat nota: 100 terbaru, hapus yang tertua saat insert; `lines` sebagai JSON.
+  Counter dan nomor: lihat §4 (atomik di server). Nomor `KLK-xxx` bisa diedit
+  user, jadi **jangan jadikan UNIQUE**.
+
+### 7.6 PNL Analyzer (baris 2791-3345)
+
+- **Parser angka PNL berbeda dari `hppParseAngka`.** `pnParseAngka` hanya
+  membuang `.` `,` spasi lalu `parseInt` (rupiah bulat, tanpa desimal):
+  `"1.500,75"` menjadi 150075. Itu sengaja (input teks laporan, semua rupiah
+  bulat), tetapi **melanggar** "semua angka uang lewat parser context-aware"
+  di blueprint §3.1. Putuskan: pertahankan (laporan harian selalu bulat) atau
+  ganti. Jangan menyatukan diam-diam: ganti parser mengubah hasil untuk data
+  lama. Ada **tiga** parser angka di app: `hppParseAngka` (HPP),
+  `pnParseAngka` (integer), dan `parseFloat(...replace(',','.'))` di CSV/qty
+  Nota (aman karena CSV nyata berisi bilangan bulat tanpa pemisah).
+- Format input: blok per hari dimulai `#tanggal YYYY-MM-DD`, lalu
+  `#income N`, `#kulakan N`, `#cash a + b + ...` (**semua angka dijumlah**),
+  `#receh N`, `#pengeluaran`/`#prive` diikuti baris rincian. Setiap baris
+  rincian: semua angka dijumlah, sisanya jadi `ket` (angka, `+`, `(`, `)`
+  dibuang; kosong menjadi `-`). Baris `#gross/#net_cash/#margin` diabaikan.
+  Blok dilewati jika tanpa tanggal atau `income/kulakan/cash` semuanya 0.
+- Rumus (tetap): `gross = income - kulakan`, `netPos = cash - kulakan`,
+  `marginP = gross/income*100`, `marginC = netPos/income*100` (0 jika income 0).
+  Ringkasan dan agregat **margin tertimbang dari total** (P5), bukan rata-rata
+  persentase harian. Warna Margin Performa: >= 15 hijau, >= 0 kuning, selain itu
+  merah; Margin Cash dua warna (>= 0).
+- `gross/netPos/marginP/marginC` **diturunkan**. Skema boleh menyimpan hanya
+  input dan menghitung ulang, tapi untuk migrasi yang aman simpan keduanya
+  (nilai lama tetap persis) dan hitung ulang dari input hanya di data baru.
+- Minggu = **minggu ISO** (Kamis menentukan tahun) dari tanggal lokal;
+  bulan = nama bulan Indonesia + tahun. Tanggal berupa `YYYY-MM-DD` lokal,
+  jangan dibuat dari `new Date(string)` (aturan #3). Di tabel SQL simpan `TEXT`.
+- Proses ulang tanggal yang sama = **mengganti** hari itu (upsert), dan arsip
+  tanggal itu ikut diganti. Hapus hari tidak menghapus arsip (sengaja).
+  Terapkan di server sebagai satu batch per tanggal.
+- Donut/Laporan PDF/CSV adalah tampilan murni di klien; tidak butuh endpoint.
+  Normalisasi keterangan arsip (`arsNormKet`): lowercase, spasi dirapatkan,
+  kosong menjadi `-`. Ikut dipindah untuk pengelompokan donut.
+- **Permission yang belum ada di app lama:** PNL (income, kulakan, prive) jelas
+  data sensitif, tetapi kode lama tidak menguncinya per peran. Mini App sebaiknya
+  boss-only. Perlu keputusan Anda.
+
 ## 8. Item §15 yang masih terbuka
 
-- [ ] Persetujuan rekomendasi 7.4 (satu daftar bersama, order teks tetap sebagai ekspor, `fulfillItem` menggantikan `processReply`).
+- [x] Rekomendasi 7.4 disetujui: satu daftar bersama, salin teks order tetap ada, `fulfillItem` menggantikan `processReply`.
+- [ ] Siapa yang boleh memakai modul Nota dan PNL (7.5, 7.6). Usulan: PNL boss-only; Nota boleh worker tanpa `harga_pokok`.
+- [ ] Parser angka PNL tetap integer atau diganti (7.6).
 - [ ] Siapa yang menerima pesan pengingat via Bot API (semua Bos atau pembuat jadwal).
 - [ ] Soft-delete supplier vs snapshot nama di `price_log` (7.1).
 - [ ] §7 blueprint: tabel mana yang delta-polling. Usulan: `items`, `price_log`,
