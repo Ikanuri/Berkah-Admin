@@ -37,6 +37,8 @@ if [ "$FAILS" -eq 0 ]; then
   check "Status proyek vs cloud" - - -- npx tgcloud status
   check "Webhook sinkron dengan handler" - 'OUT OF SYNC' -- npx tgcloud webhook
   check "Skema DB sinkron" 'No schema changes' - -- npx tgcloud migrate --local --dry-run
+  APP_ID=${TGCLOUD_TOKEN%%:*}   # token berformat app<id>:<secret>; hanya bagian id yang dipakai
+  check "Mini App terlayani (https://${APP_ID}.tgcloud.ai/)" '<div id="app">' - -- curl -fsS --max-time 20 "https://${APP_ID}.tgcloud.ai/"
   check "Smoke: endpoint me (peran Bos)" 'boss' - -- npx tgcloud run endpoints/me '{}' --ctx "$CTX"
   check "Smoke: endpoint getChanges" 'serverTime' - -- npx tgcloud run endpoints/getChanges '{ since: 0 }' --ctx "$CTX"
 fi

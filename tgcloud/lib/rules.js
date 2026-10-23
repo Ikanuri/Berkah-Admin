@@ -1,7 +1,7 @@
 // Aturan bisnis Stok yang murni (tanpa DB). Sumber: legacy v1.5.0.
 import { roundQty } from './money.js';
 
-import { UNITS } from './config.js';
+import { UNITS } from './units.js';
 const UNITS_SET = new Set(UNITS);
 
 // skNorm (3886): trim + huruf kecil, TANPA merapatkan spasi di tengah.

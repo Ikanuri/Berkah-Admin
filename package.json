@@ -3,9 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/run-all.js"
+    "dev": "vite",
+    "build": "vite build",
+    "test": "node tests/run-all.js",
+    "e2e": "node tests/e2e.mjs"
   },
   "devDependencies": {
-    "@tgcloud/cli": "0.2.0"
+    "@tgcloud/cli": "0.2.0",
+    "playwright-core": "1.64.1",
+    "vite": "8.3.5"
   }
 }

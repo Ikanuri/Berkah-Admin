@@ -8,5 +8,4 @@ export { BOSS_IDS } from './boss-ids.js';
 // Jam jadwal (pengingat, tanggal) selalu zona toko, bukan UTC server.
 export const SHOP_TZ = 'Asia/Jakarta';
 
-// Satuan yang dikenali (SK_UNITS di app lama).
-export const UNITS = ['dus', 'slp', 'biji', 'kg', 'btl', 'sak', 'lusin', 'pak', 'bal', 'ret', 'rek', 'kas', 'ikt'];
+export { UNITS } from './units.js';

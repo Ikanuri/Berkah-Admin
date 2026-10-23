@@ -1,5 +1,3 @@
 {
-  // Frontend belum ada. Saat folder build (mis. dist) sudah dibuat, ganti jadi:
-  // "static": { "source": "dist", "spa": true }
-  "static": false
+  "static": { "source": "dist" }
 }

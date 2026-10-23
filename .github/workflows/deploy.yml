@@ -45,10 +45,23 @@ jobs:
       - name: Cek secret
         run: |
           [ -n "$TGCLOUD_TOKEN" ] || { echo "::error::Secret TGCLOUD_TOKEN belum diisi"; exit 1; }
-          node scripts/ci/gen-boss-ids.mjs
+          [ -n "$BOSS_IDS" ] || { echo "::error::Secret BOSS_IDS belum diisi"; exit 1; }
 
-      - name: Build frontend (jika ada)
-        run: npm run build --if-present
+      # Frontend dibangun SEBELUM boss-ids.js ditulis, supaya ID asli tidak pernah
+      # bisa ikut masuk bundel publik.
+      - name: Build frontend
+        run: npm run build
+
+      - name: Tulis boss-ids.js dari secret
+        run: node scripts/ci/gen-boss-ids.mjs
+
+      - name: Pastikan BOSS_IDS tidak bocor ke frontend
+        run: |
+          for id in $(echo "$BOSS_IDS" | tr -s ', ' '\n\n'); do
+            if [ ${#id} -ge 6 ] && grep -rqF "$id" dist; then
+              echo "::error::ID Bos ditemukan di dist/ (bocor ke frontend)"; exit 1
+            fi
+          done
 
       - name: Skema DB, tampilkan perubahan
         run: npx tgcloud migrate --local --dry-run

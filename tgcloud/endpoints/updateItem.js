@@ -3,7 +3,7 @@ import { EndpointError } from 'sdk';
 import { requireRole, logActivity } from '../lib/auth.js';
 import { getItem, touchItem } from '../lib/store.js';
 import { adjustQty, setQty } from '../lib/rules.js';
-import { UNITS } from '../lib/config.js';
+import { UNITS } from '../lib/units.js';
 
 export default async function (input, ctx) {
   const u = await requireRole(ctx, 'boss', 'worker');

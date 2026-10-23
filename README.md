@@ -5,14 +5,29 @@ dengan banyak pengguna pada satu database. Pengganti app single-file lama.
 
 ## Status
 
-V1 backend (belum ada frontend, belum pernah di-deploy):
+Backend V1 dan frontend V1 sudah ada dan ter-deploy lewat GitHub Actions.
 
-- `tgcloud/schema.js`: users, categories, items, suppliers, price_log, activity_log
-- `tgcloud/lib/`: `money`, `tier`, `rules`, `shape` (permission), `auth`, `store`, `config`
-- `tgcloud/endpoints/`: 21 endpoint (stok, HPP, supplier, pengguna, `getChanges` untuk polling)
-- `tests/`: uji lib murni, skrip CI, dan cek sintaks (`npm test`)
+- `tgcloud/`: schema (6 tabel), lib murni (`money`, `tier`, `rules`, `shape`, `units`), `auth`, 21 endpoint
+- `src/` + `index.html`: Mini App (Vite, JS biasa tanpa framework). Tab Stok (semua peran) dan HPP, Supplier, Pengguna (Bos)
+- `tests/`: `npm test` (lib, skrip CI, LocalStore, guard impor, sintaks) dan `npm run e2e` (Chromium, butuh browser)
 
-Belum ada: frontend (Vite), export/restore/import backup, pengingat (V2), Nota (V3), PNL (V4).
+Belum ada: export/restore/import backup, pengingat (V2), Nota (V3), PNL (V4), mode offline satu file.
+
+## Menjalankan frontend secara lokal
+
+```
+npm ci
+npm run dev        # lalu buka http://localhost:5173/?dev=boss  (atau ?dev=worker, ?dev=pending)
+```
+
+`?dev=` memakai `src/local-store.js`: backend palsu di localStorage browser, tanpa Telegram.
+Itu **bukan** sumber kebenaran: ia salinan manual logika endpoint (memakai lib murni yang
+sama). Kalau endpoint berubah, ubah juga file itu. Di Telegram (initData ada) yang dipakai
+`Telegram.WebApp.Serverless.call`, tanpa `?dev`.
+
+Aturan keamanan frontend: `src/` dilarang mengimpor `config.js`, `boss-ids.js`, `auth.js`,
+`store.js`, atau `sdk` (dijaga `tests/guard-test.js`), supaya ID Bos tidak masuk bundel publik.
+Di CI, frontend dibangun SEBELUM `boss-ids.js` ditulis, dan ada pengecekan tambahan terhadap `dist/`.
 
 ## Deploy otomatis (GitHub Actions)
 
@@ -29,9 +44,9 @@ Sesudah itu semuanya otomatis:
 
 | Workflow | Kapan | Isi |
 |---|---|---|
-| `ci.yml` | PR / push non-main | `npm test` |
-| `deploy.yml` | push ke `main` / manual | test, tulis `BOSS_IDS` ke `boss-ids.js`, `migrate --safe`, `push --force`, diagnosa |
-| `diagnose.yml` | tiap 6 jam / manual | status, webhook, skema, smoke endpoint; gagal membuat issue berlabel `diagnosa`, pulih menutupnya |
+| `ci.yml` | PR / push non-main | `npm test` dan E2E browser |
+| `deploy.yml` | push ke `main` / manual | test, build frontend, tulis `BOSS_IDS` ke `boss-ids.js`, cek kebocoran, `migrate --safe`, `push --force`, diagnosa |
+| `diagnose.yml` | tiap 6 jam / manual | status, webhook, skema, Mini App terlayani, smoke endpoint; gagal membuat issue berlabel `diagnosa`, pulih menutupnya |
 
 Catatan:
 - Runtime tgcloud tidak punya secret/env yang terdokumentasi, jadi `BOSS_IDS` disuntikkan
