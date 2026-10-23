@@ -2,8 +2,9 @@ import { h, svg, ask, confirmBox, toast, openCalc, unitPopup } from '../dom.js';
 import { UNITS } from '../../tgcloud/lib/units.js';
 import { fmtNum } from '../../tgcloud/lib/money.js';
 import {
-  categoriesOf, itemsOf, tierOf, supplierName, buildOrderText, allLiveItems,
+  categoriesOf, itemsOf, tierOf, supplierName, buildOrderText, allLiveItems, inRange,
 } from '../state.js';
+import { prefs } from '../prefs.js';
 import { catBar, searchBox, panel, ensureActiveCat, dateBadge } from './shared.js';
 
 // Draft yang harus selamat dari render ulang (polling).
@@ -35,7 +36,9 @@ function tierBadge(ctx, itemId) {
 function itemCard(ctx, it, siblings) {
   const { act, isBoss } = ctx;
   const badge = it.checked ? dateBadge(it.checkedAt) : null;
-  const card = h('div', { class: 'item-card' + (it.checked ? ' checked' : ''), 'data-id': it.id });
+  const outOfRange = it.checked && !inRange(ctx.state.filter, it.checkedAt);
+  const fCls = outOfRange ? (prefs.oor === 'hide' ? ' hidden-by-filter' : ' dimmed') : '';
+  const card = h('div', { class: 'item-card' + (it.checked ? ' checked' : '') + fCls, 'data-id': it.id });
 
   if (isBoss) {
     card.draggable = true;
@@ -164,6 +167,52 @@ function outCatBar(ctx) {
     nEx ? h('span', { class: 'oc-hint' }, `⚠ ${nEx} kategori dikecualikan dari order (centangnya tetap aman)`) : null);
 }
 
+const FILTERS = [['all', 'Semua'], ['today', 'Hari ini'], ['7d', '7 Hari'], ['custom', 'Kustom']];
+
+function filterBar(ctx) {
+  const f = ctx.state.filter;
+  const set = (patch) => { Object.assign(f, patch); ctx.render(); };
+  return h('div', { class: 'sk-filterbar' },
+    h('span', { class: 'field-label', style: 'margin-right:2px;' }, 'Filter:'),
+    FILTERS.map(([key, label]) => h('button', { class: 'sk-flt' + (f.preset === key ? ' active' : ''), onclick: () => set({ preset: key }) }, label)),
+    f.preset === 'custom' ? h('span', { style: 'display:inline-flex;gap:6px;align-items:center;' },
+      h('input', { type: 'date', class: 'inp', style: 'padding:4px 8px;font-size:12px;', value: f.from || '', onchange: (e) => set({ from: e.target.value || null }) }),
+      h('span', { style: 'color:var(--ink3);' }, '–'),
+      h('input', { type: 'date', class: 'inp', style: 'padding:4px 8px;font-size:12px;', value: f.to || '', onchange: (e) => set({ to: e.target.value || null }) })) : null);
+}
+
+function bulkActions(ctx) {
+  const { state, act, isBoss } = ctx;
+  const live = allLiveItems(state);
+  return h('div', { style: 'display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:18px 0 4px;' },
+    h('button', {
+      class: 'btn',
+      onclick: async () => {
+        if (!live.length) { toast('Belum ada item'); return; }
+        if (!(await confirmBox('Centang semua item di semua kategori?', 'Centang Semua'))) return;
+        const out = await act('setChecked', { categoryId: null, checked: true });
+        if (out) toast(out.changed ? `☑ Semua item dicentang (${out.changed} baru)` : 'Semua item sudah tercentang');
+      },
+    }, '☑ Centang Semua'),
+    isBoss ? h('button', {
+      class: 'btn danger',
+      onclick: async () => {
+        if (!(await confirmBox('Reset semua centang?', 'Reset'))) return;
+        const out = await act('setChecked', { categoryId: null, checked: false });
+        if (out) toast('Semua centang direset');
+      },
+    }, '↺ Reset Semua Centang') : null,
+    isBoss ? h('button', {
+      class: 'btn danger',
+      onclick: async () => {
+        if (!live.length) { toast('Belum ada item'); return; }
+        if (!(await confirmBox('Hapus semua item dari daftar? Tidak bisa dibatalkan.', 'Hapus', true))) return;
+        const out = await act('clearItems', {});
+        if (out) toast('Semua item dihapus');
+      },
+    }, '🗑 Hapus Semua Item') : null);
+}
+
 export function renderChecklist(ctx) {
   const { state, act, isBoss } = ctx;
   const catId = ensureActiveCat(state);
@@ -214,11 +263,12 @@ export function renderChecklist(ctx) {
 
   const activeItems = catId != null ? itemsOf(state, catId) : [];
   const nActive = activeItems.filter((i) => i.checked).length;
-  const orderText = buildOrderText(state, { applyExclude: isBoss });
+  const orderText = buildOrderText(state, { applyExclude: isBoss, filter: isBoss ? state.filter : null, tsHeaders: prefs.outputTs === 'show' });
 
   return h('div', {},
     inputPanel,
     catBar(ctx, { onAdd: () => openCatModal(ctx, null), onEdit: (c) => openCatModal(ctx, c) }),
+    isBoss ? filterBar(ctx) : null,
     searchBox({
       id: 'search', value: draft.search, placeholder: 'Cari barang (semua kategori)…',
       oninput: (e) => { draft.search = e.target.value; ctx.render(); },
@@ -226,7 +276,17 @@ export function renderChecklist(ctx) {
     }),
     grid,
     activeItems.length && !q ? h('div', { class: 'counter-line' },
-      h('span', {}, h('span', { class: 'hl' }, nActive), ' dari ', h('span', { class: 'hl' }, activeItems.length), ' dicentang')) : null,
+      h('span', {}, h('span', { class: 'hl' }, nActive), ' dari ', h('span', { class: 'hl' }, activeItems.length), ' dicentang'),
+      isBoss ? [
+        h('button', {
+          class: 'mini-btn', disabled: nActive === activeItems.length,
+          onclick: async () => { const o = await act('setChecked', { categoryId: catId, checked: true }); if (o) toast(`☑ Dicentang semua: ${o.changed} item`); },
+        }, '☑ Semua'),
+        h('button', {
+          class: 'mini-btn', disabled: nActive === 0,
+          onclick: async () => { const o = await act('setChecked', { categoryId: catId, checked: false }); if (o) toast(`✕ Dibatalkan semua: ${o.changed} item`); },
+        }, '✕ Semua'),
+      ] : null) : null,
     h('div', { class: 'panel', style: 'margin-top:16px;' },
       h('div', { class: 'panel-head', style: 'flex-wrap:wrap;row-gap:8px;' },
         h('div', { class: 'panel-title', style: 'font-size:14px;' }, 'Order'),
@@ -241,5 +301,6 @@ export function renderChecklist(ctx) {
           h('textarea', {
             class: 'inp', readonly: true, style: 'width:100%;min-height:130px;',
             placeholder: 'Item tercentang muncul di sini — siap disalin ke WhatsApp', value: orderText,
-          })))));
+          })))),
+    bulkActions(ctx));
 }

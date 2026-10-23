@@ -4,6 +4,7 @@ import { call, mode } from './api.js';
 import { createState } from './state.js';
 import { createSync } from './actions.js';
 import { applyTheme, cycleTheme } from './theme.js';
+import { relTime } from './state.js';
 import { renderChecklist } from './views/checklist.js';
 import { renderHpp } from './views/hpp.js';
 import { renderSupplier } from './views/supplier.js';
@@ -54,6 +55,9 @@ function shell() {
         h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;' },
           h('span', { style: 'font-family:var(--serif);font-style:italic;font-size:14px;color:var(--ink3);' }, dateLabel()),
           h('span', { class: roleCls }, roleLbl)),
+        state.lastAct ? h('div', { class: 'sk-lastact' },
+          h('span', { class: 'sk-la-dot' }), 'Diubah ', h('b', {}, relTime(state.lastAct.ts)), ' — ', state.lastAct.desc,
+          state.lastAct.by ? h('span', { style: 'color:var(--ink4);' }, ' · ' + state.lastAct.by) : null) : null,
         ctx.isBoss ? h('div', { class: 'pn-subnav' }, Object.entries(VIEWS).map(([key, v]) => h('button', {
           class: 'sub-btn' + (key === view ? ' active' : ''),
           onclick: () => { view = key; render(); },

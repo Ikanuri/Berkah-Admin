@@ -5,6 +5,7 @@ import { readdirSync } from 'node:fs';
 execFileSync('node', ['tests/lib-test.js'], { stdio: 'inherit' });
 execFileSync('node', ['tests/ci-test.js'], { stdio: 'inherit' });
 execFileSync('node', ['tests/local-store-test.js'], { stdio: 'inherit' });
+execFileSync('node', ['tests/state-test.js'], { stdio: 'inherit' });
 execFileSync('node', ['tests/guard-test.js'], { stdio: 'inherit' });
 let n = 0;
 for (const dir of ['tgcloud', 'tgcloud/lib', 'tgcloud/endpoints', 'tgcloud/handlers', 'src', 'src/views']) {

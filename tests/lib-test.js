@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseAngka, round, fmtNum, inpVal, cost, pctOf, roundQty } from '../tgcloud/lib/money.js';
 import { rankFromEntries, winners, tierSummary } from '../tgcloud/lib/tier.js';
 import { toggle, adjustQty, setQty, fulfill, mergeAddLine, applySupplierPrice, parseLine, normName, canDeleteCategory, orderLine, bulkMargin } from '../tgcloud/lib/rules.js';
+import { describeActivity, latestActivity, visibleActivity } from '../tgcloud/lib/activity.js';
 import { shapeItemFor, canSeeSuppliers, isApproved } from '../tgcloud/lib/shape.js';
 
 let n = 0;
@@ -140,6 +141,25 @@ t('bulkMargin: rupiah, persen dari modal, lewati & tolak', () => {
   const neg = bulkMargin(items, { mode: 'rp', value: -200 });
   assert.deepEqual(neg.updates.map((u) => u.id), ['a'], 'hanya yang tetap > 0');
   assert.equal(neg.invalid, 2);
+});
+
+t('activity: deskripsi, aksi tak dikenal, dan filter per peran', () => {
+  assert.equal(describeActivity('check', { name: 'Aqua' }), 'dicentang: Aqua');
+  assert.equal(describeActivity('updateItem', { name: 'Aqua', unit: 'dus', patch: { qty: 3 } }), 'qty diubah: Aqua → 3 dus');
+  assert.equal(describeActivity('updateItem', { name: 'Aqua', patch: { name: 'Aqua 600' } }), 'diganti nama: Aqua → Aqua 600');
+  assert.equal(describeActivity('addItems', { category: 'Sembako', added: 2, updated: 1 }), '+2 baru, 1 diperbarui (Sembako)');
+  assert.equal(describeActivity('addItems', { category: 'X', added: 0, updated: 0 }), null);
+  assert.equal(describeActivity('setHpp', {}), null);
+  assert.equal(describeActivity('uncheckAll', { n: 4 }), 'reset semua centang (4 item)');
+  const rows = [
+    { ts: 3, tgId: 1, action: 'savePrices', detail: { n: 2, supplier: 'RAHASIA', tanggal: '2026-10-23' } },
+    { ts: 2, tgId: 1, action: 'setHpp', detail: {} },
+    { ts: 1, tgId: 2, action: 'check', detail: { name: 'Telur' } },
+  ];
+  assert.match(latestActivity(visibleActivity('boss', rows)).desc, /RAHASIA/);
+  const w = latestActivity(visibleActivity('worker', rows));
+  assert.equal(w.desc, 'dicentang: Telur');
+  assert.doesNotMatch(JSON.stringify(w), /RAHASIA/);
 });
 
 t('canDeleteCategory: minimal 1', () => {

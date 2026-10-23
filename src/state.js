@@ -12,6 +12,8 @@ export function createState() {
     priceLog: new Map(),
     serverTime: 0,
     activeCat: null,
+    lastAct: null,
+    filter: { preset: 'all', from: null, to: null }, // filter tanggal centang (khusus tampilan Bos)
   };
 }
 
@@ -27,6 +29,7 @@ export function applyChanges(state, delta) {
     }
   }
   if (delta.serverTime) state.serverTime = delta.serverTime;
+  if ('lastAct' in delta) { state.lastAct = delta.lastAct; changed = true; }
   return changed;
 }
 
@@ -55,15 +58,67 @@ export function rankedOf(state, itemId) {
   return rankFromEntries(logOf(state, itemId));
 }
 
-// Teks order untuk disalin ke WhatsApp. Seperti app lama (skCatExcluded), filter
-// kategori hanya berlaku untuk Bos: Karyawan menyalin semua yang tercentang.
-export function buildOrderText(state, { applyExclude = false } = {}) {
-  const lines = [];
+const p2 = (n) => String(n).padStart(2, '0');
+export const dayStr = (ts) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+};
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+// skInRange (app lama): apakah waktu centang masuk filter tanggal.
+export function inRange(filter, ts, now = Date.now()) {
+  if (!filter || filter.preset === 'all') return true;
+  if (!ts) return false;
+  const ds = dayStr(ts), today = dayStr(now);
+  if (filter.preset === 'today') return ds === today;
+  if (filter.preset === '7d') {
+    const f = new Date(now); f.setDate(f.getDate() - 6);
+    return ds >= dayStr(f.getTime()) && ds <= today;
+  }
+  if (filter.preset === 'custom' && filter.from && filter.to) return ds >= filter.from && ds <= filter.to;
+  return true;
+}
+
+// Teks order untuk disalin ke WhatsApp (skBuildOutput). Filter kategori hanya
+// berlaku untuk Bos (applyExclude). Filter tanggal memengaruhi isi order. Bila
+// ada lebih dari satu tanggal dan tsHeaders, tiap tanggal diberi header.
+export function buildOrderText(state, { applyExclude = false, filter = null, tsHeaders = true, now = Date.now() } = {}) {
+  let all = [];
   for (const cat of categoriesOf(state)) {
     if (applyExclude && cat.excludeFromOrder) continue;
-    for (const it of itemsOf(state, cat.id)) if (it.checked) lines.push(orderLine(it));
+    all.push(...itemsOf(state, cat.id).filter((i) => i.checked));
+  }
+  if (filter && filter.preset !== 'all') all = all.filter((i) => inRange(filter, i.checkedAt, now));
+  if (!all.length) return '';
+  const groups = {};
+  for (const i of all) (groups[i.checkedAt ? dayStr(i.checkedAt) : 'tanpa-tanggal'] ||= []).push(i);
+  const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+  const today = dayStr(now), yest = dayStr(now - 86400000);
+  const lines = [];
+  for (const ds of dates) {
+    if (dates.length > 1 && tsHeaders) {
+      const [, mm, dd] = ds.split('-');
+      lines.push(ds === today ? '── Hari ini ──' : ds === yest ? '── Kemarin ──' : ds === 'tanpa-tanggal' ? '── Sebelumnya ──'
+        : `── ${parseInt(dd, 10)} ${MONTHS[parseInt(mm, 10) - 1]} ──`);
+    }
+    groups[ds].forEach((i) => lines.push(orderLine(i)));
   }
   return lines.join('\n');
+}
+
+// "baru saja", "5 menit lalu", ... (skRelTime)
+export function relTime(ts, now = Date.now()) {
+  if (!ts) return null;
+  const diff = now - ts;
+  if (diff < 45000) return 'baru saja';
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return `${min} menit lalu`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} jam lalu`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} hari lalu`;
+  const d = new Date(ts);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
 
 // Semua barang hidup, urut kategori lalu sortOrder (untuk pencarian lintas kategori).

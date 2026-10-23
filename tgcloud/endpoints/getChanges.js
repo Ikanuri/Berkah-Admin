@@ -1,8 +1,9 @@
 // Polling delta. Klien kirim since (ms) = serverTime terakhir dikurangi sedikit
 // overlap; balasan hanya baris yang berubah (termasuk tombstone deletedAt).
 import { db } from 'sdk';
-import { gt } from 'sdk/db';
-import { items, categories, suppliers, priceLog } from '../schema.js';
+import { gt, eq, desc } from 'sdk/db';
+import { items, categories, suppliers, priceLog, activityLog, users } from '../schema.js';
+import { latestActivity, visibleActivity } from '../lib/activity.js';
 import { requireRole } from '../lib/auth.js';
 import { shapeItemFor, canSeeSuppliers } from '../lib/shape.js';
 
@@ -14,6 +15,15 @@ export default async function (input, ctx) {
   const cats = await db.select().from(categories).where(gt(categories.updatedAt, since)).all();
   const rows = await db.select().from(items).where(gt(items.updatedAt, since)).all();
   const out = { serverTime, categories: cats, items: rows.map((r) => shapeItemFor(u.role, r)) };
+
+  // Jejak aktivitas terakhir (skRenderLastAct): 30 baris terbaru cukup untuk
+  // menemukan satu yang bisa dideskripsikan.
+  const recent = await db.select().from(activityLog).orderBy(desc(activityLog.id)).limit(30).all();
+  const last = latestActivity(visibleActivity(u.role, recent));
+  if (last) {
+    const who = await db.select().from(users).where(eq(users.tgId, last.tgId)).get();
+    out.lastAct = { ts: last.ts, desc: last.desc, by: who ? who.name : null };
+  }
 
   if (canSeeSuppliers(u.role)) {
     out.suppliers = await db.select().from(suppliers).where(gt(suppliers.updatedAt, since)).all();

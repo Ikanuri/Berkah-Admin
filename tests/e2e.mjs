@@ -134,6 +134,50 @@ await step('Bos: pencarian lintas kategori', async () => {
   await page.waitForFunction(() => document.querySelectorAll('.item-card').length === 3);
 });
 
+await step('Bos: baris aktivitas terakhir', async () => {
+  await page.waitForSelector('.sk-lastact');
+  assert.match(await page.textContent('.sk-lastact'), /Diubah .*(baru saja|menit lalu) — .+/);
+});
+
+await step('Bos: filter tanggal meredupkan / menyembunyikan centang di luar rentang', async () => {
+  const before = await page.locator('.item-card.checked').count();
+  assert.ok(before >= 1);
+  await page.click('.sk-flt:text-is("Hari ini")');
+  assert.equal(await page.locator('.item-card.dimmed').count(), 0, 'dicentang hari ini = masuk filter');
+  await page.click('.sk-flt:text-is("Kustom")');
+  await page.fill('.sk-filterbar input[type=date] >> nth=0', '2000-01-01');
+  await page.fill('.sk-filterbar input[type=date] >> nth=1', '2000-01-02');
+  await page.waitForFunction(() => document.querySelectorAll('.item-card.dimmed').length >= 1);
+  assert.equal(await page.inputValue('.out-wrap textarea'), '', 'order hanya memuat yang masuk filter');
+  await page.click('.icon-btn[title="Pengaturan"]');
+  await page.click('.seg-opt:text-is("Sembunyi") >> nth=0');
+  await page.click('.modal-x');
+  await page.waitForFunction(() => document.querySelectorAll('.item-card.hidden-by-filter').length >= 1);
+  assert.equal(await page.locator('.item-card.hidden-by-filter').first().isVisible(), false);
+  await page.click('.icon-btn[title="Pengaturan"]');
+  await page.click('.seg-opt:text-is("Redup")');
+  await page.click('.modal-x');
+  await page.click('.sk-flt:text-is("Semua")');
+  await page.waitForFunction(() => document.querySelectorAll('.item-card.dimmed, .item-card.hidden-by-filter').length === 0);
+});
+
+await step('Bos: centang/batal massal per kategori, Centang Semua, Reset', async () => {
+  await page.click('.counter-line .mini-btn:text("☑ Semua")');
+  await page.waitForFunction(() => /3 dari 3 dicentang/.test(document.querySelector('.counter-line')?.textContent || ''));
+  await page.click('.counter-line .mini-btn:text("✕ Semua")');
+  await page.waitForFunction(() => /0 dari 3 dicentang/.test(document.querySelector('.counter-line')?.textContent || ''));
+  await page.click('.btn:text("☑ Centang Semua")');
+  await modalOk();
+  await page.waitForFunction(() => document.querySelectorAll('.item-card.checked').length === 3);
+  await page.click('.btn:text("↺ Reset Semua Centang")');
+  await modalOk();
+  await page.waitForFunction(() => document.querySelectorAll('.item-card.checked').length === 0);
+  await page.click('.btn:text("🗑 Hapus Semua Item")');
+  await page.click('.overlay .modal .btn.sm:text-is("Batal")');
+  await wait(300);
+  assert.equal(await page.locator('.item-card').count(), 3, 'dibatalkan: tidak ada yang terhapus');
+});
+
 await step('Bos: HPP menghitung pokok & margin; margin ⇄ %', async () => {
   await page.click('.sub-btn:has-text("HPP")');
   await page.waitForSelector('#hpp-table');
@@ -216,6 +260,11 @@ await step('Karyawan: tanpa sub-tab, tier, filter order, hapus, atau angka modal
   assert.equal(await page.locator('.oc-chip').count(), 0);
   assert.equal(await page.locator('.del-btn').count(), 0, 'hapus barang khusus Bos seperti app lama');
   assert.equal(await page.locator('.drag-handle').count(), 0);
+  assert.equal(await page.locator('.sk-filterbar').count(), 0, 'filter tanggal khusus Bos');
+  assert.equal(await page.locator('.counter-line .mini-btn').count(), 0);
+  assert.equal(await page.locator('.btn:text("↺ Reset Semua Centang")').count(), 0);
+  assert.equal(await page.locator('.btn:text("🗑 Hapus Semua Item")').count(), 0);
+  assert.equal(await page.locator('.btn:text("☑ Centang Semua")').count(), 1, 'Centang Semua berlaku untuk kedua peran');
   assert.doesNotMatch(await page.textContent('body'), /47\.500|5\.500|🏆/);
   await shot('6-stok-karyawan');
 });

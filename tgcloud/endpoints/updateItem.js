@@ -27,6 +27,6 @@ export default async function (input, ctx) {
   }
   if (!Object.keys(patch).length) return { ok: true };
   await touchItem(it.id, patch, Date.now());
-  await logActivity(u.tgId, 'updateItem', { id: it.id, name: it.name, patch });
+  await logActivity(u.tgId, 'updateItem', { id: it.id, name: it.name, unit: patch.unit ?? it.unit, patch });
   return { ok: true, ...patch };
 }

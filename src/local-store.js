@@ -12,6 +12,7 @@ import {
   parseLine, normName, mergeAddLine, toggle, adjustQty, setQty, fulfill,
   applySupplierPrice, canDeleteCategory, bulkMargin,
 } from '../tgcloud/lib/rules.js';
+import { latestActivity, visibleActivity } from '../tgcloud/lib/activity.js';
 
 const KEY = 'berkah-dev-db';
 const ME = 1;
@@ -95,6 +96,12 @@ export class LocalStore {
       out.suppliers = this.db.suppliers.filter((r) => r.updatedAt > s);
       out.priceLog = this.db.priceLog.filter((r) => r.updatedAt > s);
     }
+    const recent = this.db.activity.slice(-30).reverse();
+    const last = latestActivity(visibleActivity(this.role, recent));
+    if (last) {
+      const who = this.db.users.find((x) => x.tgId === last.tgId);
+      out.lastAct = { ts: last.ts, desc: last.desc, by: who ? who.name : null };
+    }
     return out;
   }
 
@@ -125,7 +132,7 @@ export class LocalStore {
         updated++;
       }
     }
-    this.log('addItems', { added, updated });
+    this.log('addItems', { category: cat.name, added, updated });
     return { added, updated };
   }
 
@@ -149,6 +156,7 @@ export class LocalStore {
       if (!UNITS.includes(input.unit)) fail('Satuan tidak dikenal');
       patch.unit = input.unit;
     }
+    this.log('updateItem', { id: it.id, name: it.name, unit: patch.unit ?? it.unit, patch });
     Object.assign(it, patch, { updatedAt: Date.now() });
     return { ok: true, ...patch };
   }
@@ -158,6 +166,7 @@ export class LocalStore {
     const it = this.item(id);
     const now = Date.now();
     const { patch } = toggle(it, now);
+    this.log(patch.checked ? 'check' : 'uncheck', { id: it.id, name: it.name, qty: it.qty, unit: it.unit });
     Object.assign(it, patch, { updatedAt: now });
     return { ok: true, ...patch };
   }
@@ -168,6 +177,7 @@ export class LocalStore {
     const now = Date.now();
     const r = fulfill(it, received, now);
     if (!r) fail('Jumlah diterima harus lebih dari 0');
+    this.log('fulfill', { id: it.id, name: it.name, received: Number(received), status: r.status });
     Object.assign(it, r.patch, { updatedAt: now });
     return { ok: true, status: r.status, ...r.patch };
   }
@@ -176,6 +186,7 @@ export class LocalStore {
     this.need('boss', 'worker');
     const it = this.item(id);
     const now = Date.now();
+    this.log('deleteItem', { id: it.id, name: it.name });
     Object.assign(it, { deletedAt: now, updatedAt: now });
     return { ok: true };
   }
@@ -222,6 +233,7 @@ export class LocalStore {
     const now = Date.now();
     this.db.items.filter((i) => i.categoryId === cat.id && !i.deletedAt)
       .forEach((i) => Object.assign(i, { deletedAt: now, updatedAt: now }));
+    this.log('deleteCategory', { id: cat.id, name: cat.name });
     Object.assign(cat, { deletedAt: now, updatedAt: now });
     return { ok: true };
   }
@@ -231,6 +243,32 @@ export class LocalStore {
     const now = Date.now();
     (ids || []).forEach((id, i) => Object.assign(this.category(id), { sortOrder: i + 1, updatedAt: now }));
     return { ok: true };
+  }
+
+  ep_setChecked({ categoryId, checked }) {
+    const target = !!checked;
+    const allCats = categoryId == null;
+    this.need(...(allCats && target ? ['boss', 'worker'] : ['boss']));
+    const cat = allCats ? null : this.category(categoryId);
+    const now = Date.now();
+    let n = 0;
+    for (const it of this.db.items) {
+      if (it.deletedAt || (cat && it.categoryId !== cat.id) || it.checked === target) continue;
+      Object.assign(it, { checked: target, checkedAt: target ? now : null, updatedAt: now });
+      n++;
+    }
+    if (n) this.log(target ? 'checkAll' : 'uncheckAll', { category: cat ? cat.name : null, n });
+    return { changed: n };
+  }
+
+  ep_clearItems({ categoryId } = {}) {
+    this.need('boss');
+    const cat = categoryId == null ? null : this.category(categoryId);
+    const now = Date.now();
+    const rows = this.db.items.filter((i) => !i.deletedAt && (!cat || i.categoryId === cat.id));
+    rows.forEach((i) => Object.assign(i, { deletedAt: now, updatedAt: now }));
+    this.log('clearItems', { category: cat ? cat.name : null, n: rows.length });
+    return { deleted: rows.length };
   }
 
   ep_setHpp(input) {
@@ -258,6 +296,7 @@ export class LocalStore {
     const { updates, skipped, invalid } = bulkMargin(rows, { mode: mode === 'pct' ? 'pct' : 'rp', value: v });
     const now = Date.now();
     for (const up of updates) Object.assign(this.db.items.find((i) => i.id === up.id), { hargaJual: up.hargaJual, updatedAt: now });
+    this.log('applyMargin', { mode: mode === 'pct' ? 'pct' : 'rp', value: v, categoryId: categoryId ?? null, updated: updates.length, skipped, invalid });
     return { updated: updates.length, skipped, invalid };
   }
 
@@ -302,6 +341,7 @@ export class LocalStore {
       Object.assign(it, r.patch, { updatedAt: now });
       n++;
     }
+    this.log('savePrices', { supplier: sup.name, tanggal, n });
     return { saved: n };
   }
 

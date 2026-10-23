@@ -13,7 +13,7 @@ await t('worker ditolak untuk endpoint Bos', async () => {
   for (const [ep, input] of [
     ['setHpp', { id: 'x' }], ['saveSupplier', { name: 'A' }], ['deleteSupplier', { id: 1 }],
     ['savePrices', {}], ['deletePriceEntry', { id: 'x' }], ['listUsers', {}],
-    ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
+    ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['clearItems', {}], ['setChecked', { categoryId: null, checked: false }], ['setChecked', { categoryId: 1, checked: true }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
   ]) await rejects(s.call(ep, input), /Tidak punya akses/, ep);
 });
 
@@ -122,6 +122,49 @@ await t('applyMargin: dihitung dari modal, lintas/kategori tunggal', async () =>
   assert.equal(d.find((i) => i.id === x).hargaJual, 9700);
   await rejects(s.call('applyMargin', { categoryId: 99, mode: 'rp', value: 1 }), /Kategori tidak ditemukan/);
   void y;
+});
+
+await t('setChecked/clearItems: peran, hitungan, dan jejak aktivitas', async () => {
+  const storage = mem();
+  const boss = new LocalStore('boss', storage);
+  await boss.call('saveCategory', { name: 'A' });
+  await boss.call('saveCategory', { name: 'B' });
+  await boss.call('addItems', { categoryId: 1, text: '1 dus X\n1 dus Y' });
+  await boss.call('addItems', { categoryId: 2, text: '1 dus Z' });
+  assert.deepEqual(await boss.call('setChecked', { categoryId: 1, checked: true }), { changed: 2 });
+  assert.deepEqual(await boss.call('setChecked', { categoryId: 1, checked: true }), { changed: 0 }, 'idempoten');
+  let d = await boss.call('getChanges', {});
+  assert.equal(d.lastAct.desc, 'centang semua di kategori "A" (2 item)');
+  assert.equal(d.items.filter((i) => i.checked).length, 2);
+
+  const worker = new LocalStore('worker', storage);
+  assert.deepEqual(await worker.call('setChecked', { categoryId: null, checked: true }), { changed: 1 }, 'karyawan boleh centang semua');
+  await rejects(worker.call('setChecked', { categoryId: null, checked: false }), /Tidak punya akses/);
+  await rejects(worker.call('setChecked', { categoryId: 1, checked: true }), /Tidak punya akses/);
+  await rejects(worker.call('clearItems', {}), /Tidak punya akses/);
+
+  // tiap LocalStore memuat storage sekali: buat ulang Bos agar melihat perubahan Karyawan
+  const boss2 = new LocalStore('boss', storage);
+  assert.deepEqual(await boss2.call('setChecked', { categoryId: null, checked: false }), { changed: 3 });
+  assert.deepEqual(await boss2.call('clearItems', { categoryId: 2 }), { deleted: 1 });
+  d = await boss2.call('getChanges', { since: 0 });
+  assert.equal(d.items.filter((i) => !i.deletedAt).length, 2);
+  assert.equal(d.lastAct.desc, 'semua item dihapus di kategori "B"');
+});
+
+await t('lastAct untuk karyawan tidak membocorkan aksi supplier/harga', async () => {
+  const storage = mem();
+  const boss = new LocalStore('boss', storage);
+  await boss.call('saveCategory', { name: 'A' });
+  await boss.call('addItems', { categoryId: 1, text: '1 dus X' });
+  const x = (await boss.call('getChanges', {})).items[0].id;
+  await boss.call('toggleItem', { id: x });
+  await boss.call('saveSupplier', { name: 'RAHASIA' });
+  await boss.call('savePrices', { supplierId: 1, tanggal: '2026-10-23', prices: [{ itemId: x, hargaBeli: 100 }] });
+  assert.match((await boss.call('getChanges', {})).lastAct.desc, /RAHASIA/);
+  const w = await new LocalStore('worker', storage).call('getChanges', {});
+  assert.equal(w.lastAct.desc, 'dicentang: X');
+  assert.doesNotMatch(JSON.stringify(w), /RAHASIA/);
 });
 
 console.log(`\nHASIL: ${n} uji LocalStore lulus`);
