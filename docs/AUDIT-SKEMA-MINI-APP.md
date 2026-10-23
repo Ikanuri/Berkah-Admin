@@ -3,15 +3,13 @@
 Sumber audit: `index.html` dan `docs/DOKUMENTASI-TEKNIS.md` di repo ini.
 Tidak ada kode app lama yang diubah.
 
-## 0. Temuan penting soal versi
+## 0. Sumber audit
 
-Salinan repo ini **belum memuat** fitur yang disebut blueprint sebagai bagian
-v1.3.0–v1.5.0: tidak ada `reminder`/`Pengingat` dan tidak ada `supRank`/tier
-termurah (grep di `index.html` = 0 hasil). Tidak ada key `stok-hpp-reminders`
-di Peta localStorage (§4 dok teknis).
-
-Skema `reminders_*` dan logika tier di blueprint tidak bisa diaudit dari repo
-ini. Butuh kode dari `Ikanuri/html5-project` (`apps/berkah-admin/`, v1.5.0).
+Audit awal memakai `index.html` di root (versi lebih tua, tanpa Pengingat dan
+Tier). Tambahan §8 memakai `legacy/berkah-admin-1.5.0.html` (v1.5.0, 6866
+baris), yang jadi acuan resmi. §1-§5 ditulis dari file lama; kunci
+localStorage dan format backup sudah dicocokkan ke v1.5.0 (lihat catatan di
+§5), tetapi isi fungsi Nota dan PNL belum dibaca ulang di v1.5.0.
 
 ## 1. Stok — bentuk data sebenarnya
 
@@ -115,6 +113,8 @@ atau satu baris di tabel `meta`.
   stok:{ boss:{...skState, mode:'worker'}, suppliers, pricelog } }
 ```
 
+**Di v1.5.0** `stok` bertambah `reminders: hppReminders` (baris 6612), jadi
+format yang harus diimpor: `stok:{boss, suppliers, pricelog, reminders}`.
 `importLegacyBackup` harus menolak jika `app !== 'berkah-aio'` (sama seperti
 `restoreAll`). Perhatikan: `skSanitizeImport` men-de-dup `item.id` yang
 bentrok dan mengisi `checkedAt`, jadi importer perlu melakukan hal yang sama.
@@ -130,11 +130,91 @@ bentrok dan mengisi `checkedAt`, jadi importer perlu melakukan hal yang sama.
 | Frontend | Dengan build step (Vite); target kedua `offline.html` satu file via adapter penyimpanan `RemoteStore`/`LocalStore`, logika bisnis dipakai bersama |
 | Permission | Pengecekan role di server per endpoint + pembuangan field modal untuk `worker`; user baru berstatus `pending` sampai disetujui Bos; `activity_log` |
 
-## 7. Item §15 yang masih terbuka
+## 7. Audit v1.5.0: Pengingat, Tier, HPP, alur order (`legacy/berkah-admin-1.5.0.html`)
 
-- [ ] Alur order teks bos↔karyawan (butir 1.3) tetap ada atau diganti centang bersama?
-- [ ] Kode reminder dan tier dari `html5-project` v1.5.0 (butir 0) untuk mengaudit `reminders_*`.
+### 7.1 Pengingat Supplier: koreksi besar pada skema blueprint
+`stok-hpp-reminders` = `{ [namaSupplier]: { recurring, oneOff[] } }`
+
+```js
+recurring: null | { days:number[] /*0=Min..6=Sab, Date.getDay()*/, time:'HH:MM',
+                    preAlertMin:number|null, lastFiredDate:'YYYY-MM-DD'|null,
+                    lastPreFiredDate:'YYYY-MM-DD'|null }
+oneOff[]:  { id, ts /*epoch ms*/, preAlertMin|null, firedAt|null, preFiredAt|null }
+```
+
+- `days` adalah **angka 0-6**, bukan teks `["Sen","Kam"]` seperti sketsa blueprint.
+- **`oneOff` BUKAN ledger.** Entrinya dibuang dari daftar begitu alarm
+  ON-TIME berbunyi (`keep = false`, baris 5646). Jangan masukkan ke golongan
+  ledger di blueprint §3.3. Mini App boleh menyimpan riwayatnya (`fired_at`)
+  sebagai perbaikan, tapi itu perubahan perilaku, bukan port.
+- Waktu selalu **jam lokal** (`new Date(y,m,d,hh,mm)`). Server tidak punya
+  zona waktu toko; simpan konstanta `Asia/Jakarta` di konfigurasi dan hitung
+  `due` dengan zona itu. Jangan pakai UTC server.
+- Pra-alert hanya bunyi jika `preMs <= now < onMs`; alarm utama bunyi jika
+  `now >= onMs` dan `lastFiredDate != hari ini`. Jendela ini harus dipertahankan
+  di scheduler server supaya tidak bunyi ulang tiap tick dan tidak bunyi untuk
+  jam yang sudah lama lewat.
+- Scheduler lama: `setInterval` 20 dtk, hanya jalan jika `skIsBoss()`. Di
+  Mini App, penerima pesan Bot API = user Bos; siapa yang menerima (semua Bos
+  atau Bos yang membuat) belum diputuskan.
+- Rename supplier **memindahkan** pengingat ke nama baru dan merenames
+  `price_log.supplier`; hapus supplier **menghapus** pengingatnya tetapi
+  **mempertahankan** `price_log`. Dengan `price_log.supplier_id` ini berarti
+  `suppliers` butuh soft-delete (`deleted_at`) atau `price_log` menyimpan
+  `supplier_name` snapshot. Tanpa FK DB (batasan tgcloud), ini wajib ditegakkan
+  di kode.
+- Merge lama: `oneOff` union per `id`; `recurring` hanya mengisi yang kosong,
+  tidak pernah menimpa jadwal yang sudah ada. Pertahankan untuk restore merge.
+- Skema usulan: `reminders_recurring(supplier_id PK, days TEXT /*JSON angka*/,
+  time, pre_alert_min, last_fired_date, last_pre_fired_date)` dan
+  `reminders_oneoff(id TEXT PK, supplier_id, ts, pre_alert_min, fired_at,
+  pre_fired_at)`. Skema blueprint sudah mendekati; yang salah hanya format `days` dan klasifikasi ledger.
+
+### 7.2 Tier Termurah (`supRankFromEntries`, baris 5351)
+Murni, mudah dipindah ke `lib/tier.js`:
+- Ambil entri **terbaru** (`ts` terbesar) per supplier, urutkan `hargaBeli` naik.
+- Pemenang = **semua** supplier dengan `hargaBeli` sama dengan yang termurah
+  (perbandingan harga, bukan nama). Satu pemenang → tampil namanya; seri →
+  "N supplier". Catatan: perbandingan memakai `===` pada float, sesuai
+  perilaku lama; jangan diganti toleransi tanpa test.
+- Detail panel memakai `maxHarga` sebagai penyebut bar (`e.hargaBeli/maxHarga`).
+  Jika semua harga 0 maka NaN. Input harga sudah dibatasi `> 0` (baris 4986),
+  jadi aman selama aturan itu dipertahankan di endpoint.
+- `supFilteredLog()` menyaring log menurut rentang tanggal; tier mengikuti filter itu.
+
+### 7.3 Fungsi HPP murni (siap dipindah ke `lib/money.js`)
+`hppParseAngka`, `hppRound`, `hppFmtNum`, `hppInpVal`, `hppCost`, `hppPctOf`
+(baris 4833-4887) tidak menyentuh DOM atau `localStorage`. Catatan:
+- `hppFmtNum` memakai `toLocaleString('id-ID')`; hasilnya bergantung ICU
+  runtime. Di runtime server tanpa Intl lengkap, tulis formatter manual.
+- `hppParseAngka("2.500")` = 2500 (ribuan), `"0.5"` = 0.5, `"1.500,75"` = 1500.75.
+  Test `tests/hpp-math-test.js` sudah ada sebagai acuan; port test-nya ikut.
+- `hppCost = hargaBeli / isi` (nol jika salah satu <= 0).
+
+### 7.4 Alur order teks bos ↔ karyawan: yang sebenarnya terjadi
+- `skBuildOutput()` hanya **membuat teks dari item yang dicentang**
+  (`"qty unit nama"` per baris, dikelompokkan per tanggal). Itu untuk disalin
+  ke WhatsApp. Kategori di `outCatEx` dikecualikan.
+- `skOnOutputChange()`: mengedit teks output **menggeser balik** ke item
+  (centang, qty, satuan). Ini jalur karyawan→bos lewat tempel teks.
+- `skProcessReply()` (baris 4567) adalah fitur bisnis nyata, bukan sekadar
+  transport: balasan `qty` >= pesanan → item di-**uncheck** (terpenuhi);
+  balasan < pesanan → item tetap tercentang dengan `qty = sisa`
+  (`parseFloat((qty - balasan).toFixed(3))`). Ini **pemenuhan sebagian**.
+- Rekomendasi: di Mini App hapus jalur tempel dua arah (karena database
+  bersama), tetapi **pertahankan** (a) tombol "salin teks order" dari item
+  tercentang untuk dikirim ke supplier via WA, dan (b) aksi "terima barang
+  (qty)" sebagai endpoint `fulfillItem` dengan aturan pemenuhan sebagian di
+  atas. Yang dihapus hanya `skWorker` sebagai state terpisah.
+  **Menunggu persetujuan Anda.**
+
+## 8. Item §15 yang masih terbuka
+
+- [ ] Persetujuan rekomendasi 7.4 (satu daftar bersama, order teks tetap sebagai ekspor, `fulfillItem` menggantikan `processReply`).
+- [ ] Siapa yang menerima pesan pengingat via Bot API (semua Bos atau pembuat jadwal).
+- [ ] Soft-delete supplier vs snapshot nama di `price_log` (7.1).
 - [ ] §7 blueprint: tabel mana yang delta-polling. Usulan: `items`, `price_log`,
       `nota_learn` pakai `updated_at`/`since`; tabel kecil (`categories`, `suppliers`) fetch penuh.
 - [ ] §9: apakah `tgcloud` punya cron (butuh baca dokumentasi di luar halaman yang sudah dibaca).
+      Jika tidak, tick pengingat bisa dipicu dari polling klien, dengan jendela 7.1 mencegah bunyi ganda.
 - [ ] Urutan fase §13 (usulan blueprint tidak dibantah, tapi belum dikonfirmasi).
