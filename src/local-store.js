@@ -13,6 +13,7 @@ import {
   applySupplierPrice, canDeleteCategory, bulkMargin,
 } from '../tgcloud/lib/rules.js';
 import { latestActivity, visibleActivity } from '../tgcloud/lib/activity.js';
+import { makeBackup, parseBackup, planRestore, applyPlan } from '../tgcloud/lib/backup.js';
 
 const KEY = 'berkah-dev-db';
 const ME = 1;
@@ -74,7 +75,7 @@ export class LocalStore {
   async call(name, input = {}) {
     const fn = this['ep_' + name];
     if (!fn) fail('Endpoint tidak dikenal: ' + name);
-    const out = fn.call(this, input || {});
+    const out = await fn.call(this, input || {});
     this.save();
     return JSON.parse(JSON.stringify(out ?? null));
   }
@@ -298,6 +299,52 @@ export class LocalStore {
     for (const up of updates) Object.assign(this.db.items.find((i) => i.id === up.id), { hargaJual: up.hargaJual, updatedAt: now });
     this.log('applyMargin', { mode: mode === 'pct' ? 'pct' : 'rp', value: v, categoryId: categoryId ?? null, updated: updates.length, skipped, invalid });
     return { updated: updates.length, skipped, invalid };
+  }
+
+  // ── backup & restore (logika murni sama dengan server: lib/backup.js) ──
+  ep_exportBackup() {
+    this.need('boss');
+    const d = this.db;
+    const data = makeBackup({
+      categories: d.categories.filter((c) => !c.deletedAt), items: d.items.filter((i) => !i.deletedAt),
+      suppliers: d.suppliers, priceLog: d.priceLog.filter((e) => !e.deletedAt),
+    });
+    const counts = { categories: data.tables.categories.length, items: data.tables.items.length, suppliers: data.tables.suppliers.length, priceLog: data.tables.priceLog.length };
+    return { sent: false, filename: 'berkah-dev.json', counts, data };
+  }
+
+  restorePlan({ data, onConflict }) {
+    this.need('boss');
+    let parsed;
+    try { parsed = parseBackup(data); } catch (e) { fail(e.message); }
+    const d = this.db;
+    const mode = onConflict === 'overwrite' ? 'overwrite' : 'keep';
+    const plan = planRestore({
+      categories: d.categories, suppliers: d.suppliers, items: d.items, priceLogIds: d.priceLog.map((e) => e.id),
+    }, parsed.incoming, { onConflict: mode });
+    return { parsed, plan, mode };
+  }
+
+  ep_restorePreview(input) {
+    const { parsed, plan, mode } = this.restorePlan(input);
+    return { format: parsed.format, warnings: parsed.warnings, onConflict: mode, counts: plan.counts };
+  }
+
+  async ep_restoreApply(input) {
+    const { parsed, plan, mode } = this.restorePlan(input);
+    const d = this.db;
+    const now = Date.now();
+    await applyPlan(plan, {
+      insertCategory: async (c) => { const id = ++d.seq.cat; d.categories.push({ id, name: c.name, sortOrder: c.sortOrder, excludeFromOrder: !!c.excludeFromOrder, updatedAt: now, deletedAt: null }); return id; },
+      reviveCategory: async (id) => Object.assign(d.categories.find((c) => c.id === id), { deletedAt: null, updatedAt: now }),
+      insertSupplier: async (s) => { const id = ++d.seq.sup; d.suppliers.push({ id, name: s.name, updatedAt: now, deletedAt: s.deleted ? now : null }); return id; },
+      reviveSupplier: async (id) => Object.assign(d.suppliers.find((x) => x.id === id), { deletedAt: null, updatedAt: now }),
+      insertItems: async (rows) => rows.forEach((r) => d.items.push({ ...r, checkedAt: r.checked ? (r.checkedAt ?? now) : null, updatedAt: now, deletedAt: null })),
+      updateItem: async (id, patch) => Object.assign(d.items.find((i) => i.id === id), patch, { updatedAt: now }),
+      insertLogs: async (rows) => rows.forEach((r) => d.priceLog.push({ ...r, createdBy: null, updatedAt: now, deletedAt: null })),
+    });
+    this.log('restore', { format: parsed.format, onConflict: mode, counts: plan.counts });
+    return { format: parsed.format, warnings: parsed.warnings, onConflict: mode, counts: plan.counts };
   }
 
   ep_saveSupplier({ id, name }) {

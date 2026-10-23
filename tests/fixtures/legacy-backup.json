@@ -1,0 +1,238 @@
+{
+ "app": "berkah-aio",
+ "version": 1,
+ "exported": "2026-10-23T12:15:27.588Z",
+ "nota": {
+  "db": [],
+  "dbmeta": null,
+  "learn": {
+   "aqua 600ml|dos": "Aqua 600ml"
+  },
+  "hist": [
+   {
+    "id": "h1",
+    "num": "KLK-001",
+    "dateStr": "20 Okt 2026",
+    "timeStr": "09.00",
+    "ket": "Kulakan Harian",
+    "total": 150000,
+    "savedAt": 1792700000000,
+    "lines": [
+     {
+      "nama": "Aqua 600ml",
+      "qty": 2,
+      "satuan": "dus",
+      "harga": 75000,
+      "sub": 150000,
+      "flag": false
+     }
+    ]
+   }
+  ],
+  "counter": 1
+ },
+ "pnl": {
+  "raw": "",
+  "days": {
+   "2026-10-20": {
+    "income": 2000000,
+    "kulakan": 1500000,
+    "cash": 1800000,
+    "receh": 50000,
+    "totalPengeluaran": 70000,
+    "totalPrive": 100000,
+    "rincianPengeluaran": [
+     {
+      "jumlah": 50000,
+      "ket": "listrik"
+     },
+     {
+      "jumlah": 20000,
+      "ket": "plastik"
+     }
+    ],
+    "rincianPrive": [
+     {
+      "jumlah": 100000,
+      "ket": "jajan"
+     }
+    ],
+    "gross": 500000,
+    "netPos": 300000,
+    "marginP": 25,
+    "marginC": 15
+   }
+  },
+  "arsip": {
+   "2026-10-20": [
+    {
+     "j": "p",
+     "amt": 50000,
+     "ket": "listrik"
+    },
+    {
+     "j": "p",
+     "amt": 20000,
+     "ket": "plastik"
+    },
+    {
+     "j": "v",
+     "amt": 100000,
+     "ket": "jajan"
+    }
+   ]
+  }
+ },
+ "stok": {
+  "boss": {
+   "cats": [
+    "Sembako",
+    "Minuman",
+    "Rokok"
+   ],
+   "activecat": "Sembako",
+   "output": "3 sak Beras Premium 5kg\n12 btl Minyak Goreng",
+   "reply": "",
+   "log": "",
+   "mode": "worker",
+   "outCatEx": [
+    "Rokok"
+   ],
+   "items": {
+    "Sembako": [
+     {
+      "id": "s1",
+      "name": "Beras Premium 5kg",
+      "qty": 3,
+      "unit": "sak",
+      "checked": true,
+      "checkedAt": 1792700000000,
+      "isi": 1,
+      "hargaBeli": 68000,
+      "hargaJual": 74000,
+      "satuanHpp": "sak"
+     },
+     {
+      "id": "s2",
+      "name": "Gula Pasir",
+      "qty": 2.5,
+      "unit": "kg",
+      "checked": false,
+      "checkedAt": null,
+      "isi": 10,
+      "hargaBeli": 47500,
+      "hargaJual": 5500,
+      "satuanHpp": "kg"
+     },
+     {
+      "id": "s3",
+      "name": "Minyak Goreng",
+      "qty": 12,
+      "unit": "btl",
+      "checked": true,
+      "checkedAt": 1792700000000
+     }
+    ],
+    "Minuman": [
+     {
+      "id": "m1",
+      "name": "Aqua 600ml",
+      "qty": 5,
+      "unit": "dus",
+      "checked": false,
+      "checkedAt": null,
+      "isi": 24,
+      "hargaBeli": 48000
+     },
+     {
+      "id": "m2",
+      "name": "Teh Botol",
+      "qty": 2,
+      "unit": "dus",
+      "checked": false,
+      "checkedAt": null
+     }
+    ],
+    "Rokok": [
+     {
+      "id": "r1",
+      "name": "Surya 12",
+      "qty": 10,
+      "unit": "slp",
+      "checked": false,
+      "checkedAt": null
+     }
+    ]
+   }
+  },
+  "suppliers": [
+   "Agen Maju",
+   "Toko Sumber"
+  ],
+  "pricelog": [
+   {
+    "id": "p1",
+    "ts": 1792700000000,
+    "tanggal": "2026-10-20",
+    "supplier": "Agen Maju",
+    "itemId": "s2",
+    "nama": "Gula Pasir",
+    "unit": "kg",
+    "hargaBeli": 48000
+   },
+   {
+    "id": "p2",
+    "ts": 1792700001000,
+    "tanggal": "2026-10-21",
+    "supplier": "Toko Sumber",
+    "itemId": "s2",
+    "nama": "Gula Pasir",
+    "unit": "kg",
+    "hargaBeli": 47500
+   },
+   {
+    "id": "p3",
+    "ts": 1792700002000,
+    "tanggal": "2026-10-21",
+    "supplier": "Agen Maju",
+    "itemId": "m1",
+    "nama": "Aqua 600ml",
+    "unit": "dus",
+    "hargaBeli": 48000
+   },
+   {
+    "id": "p4",
+    "ts": 1792700003000,
+    "tanggal": "2026-10-22",
+    "supplier": "Supplier Hapus",
+    "itemId": "s1",
+    "nama": "Beras",
+    "unit": "sak",
+    "hargaBeli": 67000
+   }
+  ],
+  "reminders": {
+   "Agen Maju": {
+    "recurring": {
+     "days": [
+      1,
+      4
+     ],
+     "time": "08:00",
+     "preAlertMin": 30,
+     "lastFiredDate": null,
+     "lastPreFiredDate": null
+    },
+    "oneOff": [
+     {
+      "id": "o1",
+      "ts": 1893456000000,
+      "preAlertMin": null,
+      "firedAt": null,
+      "preFiredAt": null
+     }
+    ]
+   }
+  }
+ }
+}

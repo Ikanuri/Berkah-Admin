@@ -13,7 +13,7 @@ await t('worker ditolak untuk endpoint Bos', async () => {
   for (const [ep, input] of [
     ['setHpp', { id: 'x' }], ['saveSupplier', { name: 'A' }], ['deleteSupplier', { id: 1 }],
     ['savePrices', {}], ['deletePriceEntry', { id: 'x' }], ['listUsers', {}],
-    ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['clearItems', {}], ['setChecked', { categoryId: null, checked: false }], ['setChecked', { categoryId: 1, checked: true }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
+    ['setUserRole', { tgId: 2, role: 'boss' }], ['applyMargin', { mode: 'rp', value: 100 }], ['clearItems', {}], ['exportBackup', {}], ['restorePreview', { data: {} }], ['restoreApply', { data: {} }], ['setChecked', { categoryId: null, checked: false }], ['setChecked', { categoryId: 1, checked: true }], ['deleteCategory', { id: 1 }], ['reorderCategories', { ids: [] }],
   ]) await rejects(s.call(ep, input), /Tidak punya akses/, ep);
 });
 
@@ -165,6 +165,30 @@ await t('lastAct untuk karyawan tidak membocorkan aksi supplier/harga', async ()
   const w = await new LocalStore('worker', storage).call('getChanges', {});
   assert.equal(w.lastAct.desc, 'dicentang: X');
   assert.doesNotMatch(JSON.stringify(w), /RAHASIA/);
+});
+
+await t('exportBackup + restoreApply lewat LocalStore: bulat-balik antar perangkat', async () => {
+  const a = new LocalStore('boss', mem());
+  await a.call('saveCategory', { name: 'A' });
+  await a.call('addItems', { categoryId: 1, text: '3 dus Aqua\n2 kg Gula' });
+  await a.call('saveSupplier', { name: 'S1' });
+  const items = (await a.call('getChanges', {})).items;
+  await a.call('setHpp', { id: items[0].id, isi: 24, hargaBeli: 48000 });
+  await a.call('savePrices', { supplierId: 1, tanggal: '2026-10-23', prices: [{ itemId: items[0].id, hargaBeli: 47000 }] });
+  const out = await a.call('exportBackup', {});
+  assert.deepEqual(out.counts, { categories: 1, items: 2, suppliers: 1, priceLog: 1 });
+
+  const b = new LocalStore('boss', mem());
+  const prev = await b.call('restorePreview', { data: out.data });
+  assert.deepEqual(prev.counts.items, { add: 2, overwrite: 0, skip: 0 });
+  assert.equal((await b.call('getChanges', {})).items.length, 0, 'preview tidak menulis');
+  await b.call('restoreApply', { data: out.data });
+  const d = await b.call('getChanges', {});
+  assert.equal(d.items.length, 2);
+  assert.equal(d.items.find((i) => i.name === 'Aqua').hargaBeli, 47000, 'harga terakhir ikut terbawa');
+  assert.equal(d.priceLog.length, 1);
+  assert.match(d.lastAct.desc, /^restore backup \(pertahankan\): \+2 barang/);
+  await rejects(b.call('restorePreview', { data: { foo: 1 } }), /Format backup tidak dikenal/);
 });
 
 console.log(`\nHASIL: ${n} uji LocalStore lulus`);

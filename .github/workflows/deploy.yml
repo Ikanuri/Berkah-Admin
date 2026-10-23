@@ -81,6 +81,14 @@ jobs:
       - name: Deploy kode
         run: npx tgcloud push --force
 
+      - name: Uji restore di database cloud (data sementara, dibersihkan)
+        run: |
+          cp scripts/ci/cloud-restore-test.js tgcloud/endpoints/zzCloudRestoreTest.js
+          out=$(npx tgcloud run endpoints/zzCloudRestoreTest '{}' 2>&1); rc=$?
+          rm -f tgcloud/endpoints/zzCloudRestoreTest.js
+          echo "$out"
+          [ $rc -eq 0 ] && grep -q "idempotent" <<<"$out"
+
       - name: Diagnosa pasca-deploy
         run: scripts/ci/diagnose.sh
 

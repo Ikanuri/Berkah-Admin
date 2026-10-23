@@ -2,6 +2,7 @@ import { h, openModal, toast } from '../dom.js';
 import { call } from '../api.js';
 import { themePref, setTheme } from '../theme.js';
 import { prefs } from '../prefs.js';
+import { exportBackup, pickRestoreFile } from './backup.js';
 
 const ROLE_LABEL = { boss: 'Bos', worker: 'Karyawan', pending: 'Menunggu' };
 
@@ -53,6 +54,12 @@ export function openSettings(ctx) {
       h('div', { class: 'set-label' }, 'Checklist'),
       prefSeg('Item tercentang di luar filter tanggal:', 'oor', [['dim', 'Redup'], ['hide', 'Sembunyi']]),
       prefSeg('Header tanggal di teks order:', 'outputTs', [['show', 'Tampil'], ['hide', 'Sembunyi']])) : null,
+    ctx.isBoss ? h('div', { class: 'set-row', style: 'flex-direction:column;align-items:flex-start;' },
+      h('div', { class: 'set-label' }, 'Backup & Restore'),
+      h('div', { class: 'set-sub', style: 'margin:0;' }, 'Backup semua barang, harga, dan supplier. Restore menerima backup app ini maupun backup app lama (v1.x), dengan merge dan preview.'),
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;' },
+        h('button', { class: 'btn sm', onclick: exportBackup }, '⬇ Backup'),
+        h('button', { class: 'btn sm', onclick: () => pickRestoreFile(ctx) }, '⬆ Restore'))) : null,
     ctx.isBoss ? h('div', { style: 'margin-top:14px;' }, h('div', { class: 'field-label', style: 'margin-bottom:6px;' }, 'Pengguna'), box) : null);
   openModal({ title: 'Pengaturan', body });
   if (ctx.isBoss) usersSection(ctx, box);

@@ -252,6 +252,49 @@ await step('Bos: pengaturan, tema gelap, persetujuan pengguna', async () => {
   await page.evaluate(() => localStorage.setItem('brk-theme', 'light'));
 });
 
+await step('Bos: backup lalu restore backup ASLI app lama lewat UI (preview, merge, idempoten)', async () => {
+  // konteks baru = localStorage kosong, seperti perangkat baru
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
+  await fresh.route(/telegram-web-app\.js|fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const pg = await fresh.newPage();
+  const fixture = new URL('./fixtures/legacy-backup.json', import.meta.url).pathname;
+  await pg.goto(BASE + '?dev=boss');
+  await pg.waitForSelector('.topbar');
+  await pg.click('.icon-btn[title="Pengaturan"]');
+  const [chooser] = await Promise.all([pg.waitForEvent('filechooser'), pg.click('.btn:text("⬆ Restore")')]);
+  await chooser.setFiles(fixture);
+  await pg.waitForSelector('.modal-title:text("Restore Backup")');
+  await pg.waitForSelector('.badge:text("Backup app lama")');
+  const txt = await pg.textContent('.overlay:last-of-type .modal-body');
+  assert.match(txt, /Kategori\s*\+3 baru/);
+  assert.match(txt, /Barang\s*\+6 baru/);
+  assert.match(txt, /Riwayat harga\s*\+4 baru/);
+  await pg.click('.modal-foot .btn.primary:text-is("Restore")');
+  await pg.waitForFunction(() => document.getElementById('toast')?.textContent.includes('Restore selesai: +6 barang'));
+  await pg.click('.overlay .modal-x');
+  await pg.waitForSelector('.item-card');
+  assert.equal(await pg.locator('.cat-tab:not(.cat-tab-add)').count(), 3);
+  assert.equal(await pg.locator('.item-card').count(), 3, 'kategori aktif Sembako: 3 barang');
+  // kategori Rokok dikecualikan dari order (dibawa dari outCatEx)
+  assert.equal(await pg.locator('.oc-chip.off').count(), 1);
+  // restore kedua kali: tidak ada yang baru -> tombol Restore nonaktif
+  await pg.click('.icon-btn[title="Pengaturan"]');
+  const [chooser2] = await Promise.all([pg.waitForEvent('filechooser'), pg.click('.btn:text("⬆ Restore")')]);
+  await chooser2.setFiles(fixture);
+  await pg.waitForSelector('.modal-title:text("Restore Backup")');
+  await pg.waitForFunction(() => /Tidak ada yang perlu ditambahkan/.test(document.body.textContent));
+  assert.equal(await pg.locator('.modal-foot .btn.primary:text-is("Restore")').isDisabled(), true);
+  // backup baru -> unduh JSON berformat Mini App
+  await pg.click('.modal-foot .btn.sm:text-is("Batal")');
+  const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('.btn:text("⬇ Backup")')]);
+  const got = JSON.parse(await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8'));
+  assert.equal(got.app, 'berkah-mini');
+  assert.equal(got.tables.items.length, 6);
+  assert.equal(got.tables.priceLog.length, 4);
+  assert.match(dl.suggestedFilename(), /^berkah-.*\.json$/);
+  await fresh.close();
+});
+
 await step('Karyawan: tanpa sub-tab, tier, filter order, hapus, atau angka modal', async () => {
   await page.goto(BASE + '?dev=worker');
   await page.waitForSelector('.item-card');

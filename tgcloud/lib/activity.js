@@ -26,6 +26,11 @@ export function describeActivity(action, d = {}) {
     case 'uncheckAll': return `${d.category ? `batalkan semua centang di kategori "${d.category}"` : 'reset semua centang'} (${d.n} item)`;
     case 'clearItems': return d.category ? `semua item dihapus di kategori "${d.category}"` : 'semua item dihapus';
     case 'savePrices': return `${d.n} harga disimpan dari supplier "${d.supplier}" (${d.tanggal})`;
+    case 'restore': {
+      const c = d.counts || {};
+      const it = c.items || {};
+      return `restore backup (${d.onConflict === 'overwrite' ? 'timpa' : 'pertahankan'}): +${it.add || 0} barang, ${it.overwrite || 0} ditimpa, +${(c.priceLog || {}).add || 0} riwayat harga`;
+    }
     case 'applyMargin': return `margin massal ${d.mode === 'pct' ? d.value + '%' : 'Rp' + d.value} → ${d.updated} barang`;
     default: return null;
   }
@@ -43,7 +48,7 @@ export function latestActivity(rows) {
 // Aksi yang menyentuh harga modal / supplier / pengguna: tidak boleh terlihat Karyawan.
 export const BOSS_ONLY_ACTIONS = new Set([
   'savePrices', 'applyMargin', 'setHpp', 'deletePriceEntry',
-  'addSupplier', 'renameSupplier', 'deleteSupplier', 'setUserRole',
+  'addSupplier', 'renameSupplier', 'deleteSupplier', 'setUserRole', 'restore', 'exportBackup',
 ]);
 
 export function visibleActivity(role, rows) {
