@@ -11,6 +11,8 @@ import { renderSupplier } from './views/supplier.js';
 import { openSettings } from './views/settings.js';
 import { renderNota } from './views/nota.js';
 import { renderPnl } from './views/pnl.js';
+import { loadCache, saveCache, restore, clearCache } from './cache.js';
+import { applyChanges } from './state.js';
 import { renderPenerimaan } from './views/penerimaan.js';
 import { renderReceipts, openReview, firstPending } from './views/receipts.js';
 import { pendingReceiptCount } from './state.js';
@@ -111,7 +113,20 @@ const typing = () => {
   const a = document.activeElement;
   return !!((a && app.contains(a) && a.matches(TEXT_ENTRY)) || hasUnitPop());
 };
+// Simpan cache buka-cepat (Telegram saja), digabung supaya tidak menulis tiap render.
+let persistTimer = null;
+const cacheable = () => mode().kind === 'telegram' && state.me?.tgId && state.me.role !== 'pending';
+function persist() {
+  if (!cacheable()) return;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => saveCache(state.me.tgId, state), 1500);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && cacheable()) { clearTimeout(persistTimer); saveCache(state.me.tgId, state); }
+});
+
 function scheduleRender() {
+  persist();
   if (typing()) { dirty = true; return; }
   render();
 }
@@ -134,8 +149,28 @@ async function boot() {
     screen('Telegram', 'Buka aplikasi ini lewat Telegram (menu bot).');
     return;
   }
+  // Buka cepat: tampilkan data tersimpan dulu, verifikasi peran dan tarik delta di belakang layar.
+  const tgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+  const cached = mode().kind === 'telegram' && tgId ? loadCache(tgId) : null;
+  if (cached && cached.me.role !== 'pending') {
+    restore(state, cached);
+    sync = createSync(state, scheduleRender);
+    render();
+    call('me').then((me) => {
+      if (me.role !== state.me.role) { clearCache(tgId); location.reload(); return; }
+      state.me = me;
+    }).catch(() => { /* offline: tetap pakai data tersimpan */ });
+    sync.refresh();
+    sync.start();
+    return;
+  }
+
+  // Tanpa cache: `me` dan data awal diminta BERSAMAAN (satu putaran jaringan, bukan dua).
+  let first = null;
   try {
-    state.me = await call('me');
+    const [me, delta] = await Promise.all([call('me'), call('getChanges', { since: 0, tick: true }).catch(() => null)]);
+    state.me = me;
+    first = delta;
   } catch (e) {
     screen('Gagal masuk', e.message, h('button', { class: 'btn primary', style: 'margin-top:12px', onclick: () => location.reload() }, 'Coba lagi'));
     return;
@@ -145,9 +180,11 @@ async function boot() {
       h('button', { class: 'btn primary', style: 'margin-top:12px', onclick: () => location.reload() }, 'Cek lagi'));
     return;
   }
+  if (first) applyChanges(state, first);
   sync = createSync(state, scheduleRender);
   render();
-  await sync.refresh();
+  if (!first) await sync.refresh();
+  persist();
   sync.start();
 }
 

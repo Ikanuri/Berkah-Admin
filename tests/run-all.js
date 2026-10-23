@@ -13,6 +13,8 @@ execFileSync('node', ['tests/nota-test.js'], { stdio: 'inherit' });
 execFileSync('node', ['tests/pnl-test.js'], { stdio: 'inherit' });
 execFileSync('node', ['tests/pnl-store-test.js'], { stdio: 'inherit' });
 execFileSync('node', ['tests/receipts-test.js'], { stdio: 'inherit' });
+execFileSync('node', ['tests/sync-test.js'], { stdio: 'inherit' });
+execFileSync('node', ['tests/cache-test.js'], { stdio: 'inherit' });
 execFileSync('node', ['tests/guard-test.js'], { stdio: 'inherit' });
 let n = 0;
 for (const dir of ['tgcloud', 'tgcloud/lib', 'tgcloud/endpoints', 'tgcloud/handlers', 'src', 'src/views']) {

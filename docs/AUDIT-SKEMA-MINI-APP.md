@@ -352,3 +352,24 @@ Dari kode lama yang belum tertulis di atas:
   mode timpa) dan PNL (hari & arsip per tanggal; tanggal yang ada dipertahankan kecuali mode timpa).
 - **Penyimpangan sengaja** dari app lama: pengingat berjadwal yang jamnya sudah lewat saat diimpor tidak dibunyikan,
   sekali-jadwal kedaluwarsa tidak diimpor, margin massal SEMUA meminta konfirmasi, laporan PDF berbentuk halaman cetak sederhana.
+
+## 10. Perubahan arah: Penerimaan (menggantikan daftar bersama)
+
+Keputusan awal (7.4) "satu daftar bersama Bos+Karyawan, `fulfillItem` menggantikan processReply" **dibatalkan** atas
+permintaan pemilik. Alur app lama dipertahankan tetapi tanpa salin-tempel WhatsApp:
+
+- Daftar Stok (`items`) khusus Bos. Karyawan tidak pernah menerimanya (diuji: respons `getChanges` karyawan hanya
+  berisi `workerItems`, `receipts`, `serverTime`).
+- Karyawan punya **daftar pribadi** (`worker_items`, per `owner_id`) seperti halaman karyawan app lama; centang = sudah
+  diambil; qty = jumlah yang benar-benar diambil. Hanya halaman ini yang tampil untuk peran Karyawan.
+- Tombol **Setor** membuat satu `receipts` (foto nama/qty/satuan barang yang dicentang) dan mengeluarkan barang itu dari
+  daftar karyawan. Klaim per barang bersyarat (`UPDATE ... WHERE deleted_at IS NULL AND checked = 1`) mencegah setoran kembar.
+- Bos diberi tahu lewat spanduk + lencana di tab Penerimaan + pesan Telegram (best-effort, perlu `/start`).
+- **Setujui** = `skProcessReply` app lama per setoran (`planReceipt`): nama dicocokkan (trim + huruf kecil), satuan diabaikan,
+  diambil >= dipesan -> terpenuhi (centang dilepas), kurang -> tetap tercentang dengan qty sisa, nama tak ada -> diabaikan.
+  Klaim atomik (`UPDATE receipts ... WHERE status = 'pending'`); rencana disimpan di `result` sebelum diterapkan dan
+  penerapan memakai nilai mutlak, jadi mengulang setelah gagal di tengah aman.
+- **Tolak**: barang kembali ke daftar karyawan (tercentang) dan Karyawan diberi tahu beserta catatan Bos.
+- Tombol "Terima" per barang di mode Bos dan endpoint `fulfillItem` dihapus.
+- Beda dari app lama (sengaja): karyawan tidak punya tombol hapus barang (sama seperti app lama) dan barang yang disetor
+  otomatis keluar dari daftarnya; backup/restore tidak membawa daftar karyawan dan setoran (data sementara).

@@ -5,7 +5,8 @@ import {
   categoriesOf, itemsOf, tierOf, supplierName, buildOrderText, allLiveItems, inRange,
 } from '../state.js';
 import { prefs } from '../prefs.js';
-import { catBar, searchBox, panel, ensureActiveCat, dateBadge } from './shared.js';
+import { planAdd } from '../optimistic.js';
+import { catBar, searchBox, panel, ensureActiveCat, dateBadge, memo, sweepMemo } from './shared.js';
 
 // Draft yang harus selamat dari render ulang (polling).
 const draft = { add: '', search: '' };
@@ -33,11 +34,19 @@ function tierBadge(ctx, itemId) {
   return h('div', { class: 'item-tier-badge sup-item-tier' }, '🏆 ', who, ' ', h('span', { class: 'tier-price' }, fmtNum(t.price)));
 }
 
-function itemCard(ctx, it, siblings) {
-  const { act, isBoss } = ctx;
+// Kartu dipakai ulang bila tanda tangannya sama (lihat memo di shared.js).
+function itemCard(ctx, it) {
   const badge = it.checked ? dateBadge(it.checkedAt) : null;
   const outOfRange = it.checked && !inRange(ctx.state.filter, it.checkedAt);
   const fCls = outOfRange ? (prefs.oor === 'hide' ? ' hidden-by-filter' : ' dimmed') : '';
+  const tier = ctx.isBoss ? tierOf(ctx.state, it.id) : null;
+  const tierSig = tier ? JSON.stringify(tier) + (tier.supplierId != null ? supplierName(ctx.state, tier.supplierId) : '') : '';
+  const sig = JSON.stringify([it.id, it.name, it.qty, it.unit, it.checked, it.checkedAt, badge && badge.label, fCls, tierSig, ctx.isBoss]);
+  return memo('chk', it.id, sig, () => buildItemCard(ctx, it, badge, fCls));
+}
+
+function buildItemCard(ctx, it, badge, fCls) {
+  const { act, isBoss } = ctx;
   const card = h('div', { class: 'item-card' + (it.checked ? ' checked' : '') + fCls, 'data-id': it.id });
 
   if (isBoss) {
@@ -54,10 +63,11 @@ function itemCard(ctx, it, siblings) {
     card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
     card.addEventListener('drop', (e) => {
       e.preventDefault(); card.classList.remove('drag-over');
+      const siblings = allLiveItems(ctx.state); // dihitung saat drop: kartu ini bisa dipakai ulang antar render
       const src = siblings.find((x) => x.id === dragSrc);
       dragSrc = null;
       if (!src || src.id === it.id || src.categoryId !== it.categoryId) return;
-      const ids = siblings.filter((x) => x.categoryId === it.categoryId).map((x) => x.id);
+      const ids = itemsOf(ctx.state, it.categoryId).map((x) => x.id);
       ids.splice(ids.indexOf(src.id), 1);
       ids.splice(ids.indexOf(it.id), 0, src.id);
       act('reorderItems', { categoryId: it.categoryId, ids });
@@ -220,15 +230,17 @@ export function renderChecklist(ctx) {
     h('div', { style: 'display:flex;gap:8px;' }, addInput,
       h('button', {
         class: 'btn primary',
-        onclick: async () => {
+        onclick: () => {
           if (catId == null) { toast('Buat kategori dulu'); return; }
-          if (!draft.add.trim()) return;
-          const out = await act('addItems', { categoryId: catId, text: draft.add });
-          if (out) {
-            draft.add = '';
-            toast([out.added && `+${out.added} baru`, out.updated && `${out.updated} diperbarui`].filter(Boolean).join(' · '));
-            ctx.render();
-          }
+          const text = draft.add;
+          if (!text.trim()) return;
+          const plan = planAdd(itemsOf(state, catId), text);
+          if (!plan.added && !plan.updated) { toast('Tidak ada baris valid'); return; }
+          draft.add = '';
+          // tampil seketika; server menyusul di belakang layar (gagal: draf dikembalikan)
+          act('addItems', { categoryId: catId, text }).then((out) => { if (!out && !draft.add) { draft.add = text; ctx.render(); } });
+          toast([plan.added && `+${plan.added} baru`, plan.updated && `${plan.updated} diperbarui`].filter(Boolean).join(' · '));
+          ctx.render();
         },
       }, '+ Tambah')),
     h('div', { class: 'hint' }, 'Format opsional: ', h('span', { class: 'hl' }, 'qty satuan nama'), '. Item baru masuk tanpa centang — centang = perlu diorder.')));
@@ -240,18 +252,19 @@ export function renderChecklist(ctx) {
       const matched = itemsOf(state, c.id).filter((i) => i.name.toLowerCase().includes(q));
       if (!matched.length) continue;
       grid.append(h('div', { class: 'sk-cat-label' }, c.name));
-      matched.forEach((i) => grid.append(itemCard(ctx, i, allLiveItems(state))));
+      matched.forEach((i) => grid.append(itemCard(ctx, i)));
       total += matched.length;
     }
     if (!total) grid.append(h('div', { class: 'empty', style: 'grid-column:1/-1' }, h('div', { class: 'empty-title' }, 'Tidak ketemu'), h('div', { class: 'empty-sub' }, `"${draft.search}" tidak ada di kategori manapun`)));
   } else if (catId != null) {
     const list = itemsOf(state, catId);
     if (!list.length) grid.append(h('div', { class: 'empty', style: 'grid-column:1/-1' }, h('div', { class: 'empty-icon' }, '📦'), h('div', { class: 'empty-title' }, 'Belum ada barang'), h('div', { class: 'empty-sub' }, 'Tambahkan lewat kotak Input Barang di atas')));
-    list.forEach((i) => grid.append(itemCard(ctx, i, list)));
+    list.forEach((i) => grid.append(itemCard(ctx, i)));
   } else {
     grid.append(h('div', { class: 'empty', style: 'grid-column:1/-1' }, h('div', { class: 'empty-icon' }, '🗂'), h('div', { class: 'empty-title' }, 'Belum ada kategori'), h('div', { class: 'empty-sub' }, 'Ketuk "+ Kategori" untuk membuat yang pertama')));
   }
 
+  sweepMemo('chk');
   const activeItems = catId != null ? itemsOf(state, catId) : [];
   const nActive = activeItems.filter((i) => i.checked).length;
   const orderText = buildOrderText(state, { applyExclude: isBoss, filter: isBoss ? state.filter : null, tsHeaders: prefs.outputTs === 'show' });

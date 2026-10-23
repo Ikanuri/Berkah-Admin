@@ -5,10 +5,9 @@
 import { h, svg, confirmBox, toast, openCalc, unitPopup } from '../dom.js';
 import { UNITS } from '../../tgcloud/lib/units.js';
 import { replyText } from '../../tgcloud/lib/receipts.js';
-import { makeId } from '../../tgcloud/lib/id.js';
-import { parseLine, normName } from '../../tgcloud/lib/rules.js';
+import { planAdd } from '../optimistic.js';
 import { workerItemsOf, receiptsOf, relTime } from '../state.js';
-import { searchBox, panel, dateBadge } from './shared.js';
+import { searchBox, panel, dateBadge, memo, sweepMemo } from './shared.js';
 
 const draft = { add: '', search: '' };
 const CHK_SVG = '<svg width="13" height="10" viewBox="0 0 11 8" fill="none"><path d="M1 4L4 7L10 1" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -25,8 +24,13 @@ async function copyText(text) {
 }
 
 function itemCard(ctx, it) {
-  const { act } = ctx;
   const badge = it.checked ? dateBadge(it.checkedAt) : null;
+  const sig = JSON.stringify([it.id, it.qty, it.unit, it.checked, it.checkedAt, badge && badge.label]);
+  return memo('wk', it.id, sig, () => buildCard(ctx, it, badge));
+}
+
+function buildCard(ctx, it, badge) {
+  const { act } = ctx;
   return h('div', { class: 'item-card' + (it.checked ? ' checked' : ''), 'data-id': it.id },
     h('div', {
       class: 'chk' + (it.checked ? ' on' : ''), role: 'checkbox', 'aria-checked': String(it.checked), tabindex: '0',
@@ -103,22 +107,21 @@ export function renderPenerimaan(ctx) {
       h('div', { class: 'empty-title' }, q ? 'Tidak ketemu' : 'Belum ada barang'),
       h('div', { class: 'empty-sub' }, q ? `"${draft.search}" tidak ada di daftar` : 'Tempel pesanan dari Bos lewat kotak Input Barang di atas')));
   } else list.forEach((i) => grid.append(itemCard(ctx, i)));
+  sweepMemo('wk');
 
   return h('div', {},
     panel('Input Barang', h('div', { class: 'panel-body' },
       h('div', { style: 'display:flex;gap:8px;' }, addInput,
         h('button', {
           class: 'btn primary',
-          onclick: async () => {
+          onclick: () => {
             const raw = draft.add;
             if (!raw.trim()) return;
-            // id baru dibuat di sini supaya barang langsung tampil dan cocok dengan baris di server
-            const names = new Set(all.map((i) => normName(i.name)));
-            const ids = raw.split('\n').map(parseLine).filter(Boolean).filter((l) => !names.has(normName(l.name))).map(() => makeId());
+            const plan = planAdd(workerItemsOf(state), raw, { worker: true });
+            if (!plan.added && !plan.updated) { toast('Tidak ada baris valid'); return; }
             draft.add = '';
-            const out = await act('wAddItems', { text: raw, ids });
-            if (out) toast([out.added && `+${out.added} baru`, out.updated && `${out.updated} diperbarui`].filter(Boolean).join(' · '));
-            else draft.add = raw;
+            act('wAddItems', { text: raw }).then((out) => { if (!out && !draft.add) { draft.add = raw; ctx.render(); } });
+            toast([plan.added && `+${plan.added} baru`, plan.updated && `${plan.updated} diperbarui`].filter(Boolean).join(' · '));
             ctx.render();
           },
         }, '+ Tambah')),

@@ -56,3 +56,24 @@ export const panel = (title, body, { chip, headExtra } = {}) =>
       h('div', { class: 'panel-title', style: 'font-size:14px;' }, title), headExtra || null,
       chip ? h('div', { class: 'panel-chip' }, chip) : null),
     body);
+
+// ── Memo DOM ──
+// Render ulang seluruh app tiap perubahan itu mahal pada daftar panjang. Kartu yang isinya tidak
+// berubah (tanda tangan `sig` sama) dipakai ulang: elemen lama cukup dipindahkan ke pohon baru.
+// Handler di dalam kartu TIDAK BOLEH menyimpan data yang bisa basi; ambil dari state saat dipakai.
+const memoCache = new Map();
+export function memo(scope, key, sig, build) {
+  const k = scope + '|' + key;
+  const hit = memoCache.get(k);
+  if (hit && hit.sig === sig) { hit.seen = true; return hit.el; }
+  const el = build();
+  memoCache.set(k, { sig, el, seen: true });
+  return el;
+}
+// Panggil sekali per render sesudah semua memo(scope, ...): buang kartu yang tidak lagi dipakai.
+export function sweepMemo(scope) {
+  for (const [k, v] of memoCache) {
+    if (!k.startsWith(scope + '|')) continue;
+    if (v.seen) v.seen = false; else memoCache.delete(k);
+  }
+}

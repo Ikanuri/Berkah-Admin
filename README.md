@@ -9,21 +9,42 @@ Semua fungsi app lama v1.5.0 sudah diport dan ter-deploy lewat GitHub Actions:
 
 | Modul | Siapa | Isi |
 |---|---|---|
-| Stok | Bos + Karyawan | daftar bersama, kategori, centang/qty/satuan, terima sebagian, filter tanggal, aksi massal, teks order |
+| Stok | Bos | daftar utama, kategori, centang/qty/satuan, filter tanggal, aksi massal, teks order |
+| Penerimaan | Karyawan (halaman utamanya) + Bos (inbox) | Karyawan: daftar pribadi seperti halaman karyawan app lama (tempel pesanan, centang = sudah diambil, qty/satuan, "Balasan ke Bos") + tombol **Setor**. Bos: notifikasi (spanduk + pesan Telegram), pratinjau barang yang diambil lawan daftar Bos, **Setujui** (logika "balasan" app lama: terpenuhi = centang dilepas, kurang = tetap tercentang dengan qty sisa) atau **Tolak** (barang kembali ke daftar karyawan) |
 | HPP, Supplier | Bos | harga modal, margin (termasuk massal), riwayat harga supplier, tier termurah |
 | Pengingat | Bos | jadwal mingguan & sekali-jadwal per supplier, pesan Telegram ke semua Bos; dicek tiap ada yang membuka app (tanpa cron, lihat catatan) |
 | Nota Kulakan | Bos | impor CSV produk, pencocokan otomatis, kamus belajar, struk (cetak/WA/gambar), riwayat |
 | PNL | Bos | parser teks harian, tabel harian/mingguan/bulanan/rincian, margin tertimbang, arsip + donut, CSV, laporan |
 | Backup | Bos | export .json ke chat bot, restore merge dengan preview (format baru dan backup app lama, termasuk Nota & PNL) |
 
-- `tgcloud/`: schema (15 tabel), lib murni (`money`, `tier`, `rules`, `shape`, `units`, `backup`, `reminders`, `match`, `nota`, `pnl`), `auth`, 41 endpoint
+- `tgcloud/`: schema (17 tabel), lib murni (`money`, `tier`, `rules`, `shape`, `units`, `backup`, `reminders`, `match`, `nota`, `pnl`, `receipts`), `auth`, 47 endpoint
 - `src/` + `index.html`: Mini App (Vite, JS biasa tanpa framework), tiga modul di topbar untuk Bos (Stok, Nota, PNL)
 - `tests/`: `npm test` (lib, skrip CI, LocalStore, backup, pengingat, Nota, PNL, guard impor, sintaks) dan `npm run e2e` (Chromium, butuh browser)
 
 Desain UI mengikuti app lama (`legacy/`): token warna ivory/arang + aksen crail, font Source Serif 4 /
 Inter / JetBrains Mono, topbar, panel, kartu barang, pil sub-navigasi, tabel, modal, numpad, tema gelap.
-Belum diport dari UI lama: panel Balasan/Log (digantikan "Terima" per barang), Export Excel,
+Belum diport dari UI lama: panel Balasan/Log Bos (digantikan alur Setor + persetujuan), Export Excel,
 donut ringkasan Supplier, seekbar, bottom-nav, laporan PDF berbagan grafik (diganti laporan cetak sederhana).
+
+## Kecepatan (rasa lag)
+
+Telegram Serverless punya latensi jaringan yang tidak bisa dihilangkan, jadi yang dilakukan adalah
+**tidak menunggunya**:
+
+- **Perubahan lokal seketika** (`src/optimistic.js`): centang, qty ±, satuan, tambah/hapus/urut barang
+  dan seluruh daftar Penerimaan langsung tampil memakai aturan murni yang sama dengan server; server
+  menyusul di belakang layar. Hasilnya diuji sama persis dengan hasil server (`tests/sync-test.js`).
+- **Antrean berurutan** (`src/sync-core.js`): panggilan ke server dikirim satu per satu sesuai urutan ketukan;
+  polling ditahan selama ada yang belum terkirim dan jawaban polling basi dibuang. Bila ada yang gagal,
+  perubahan lokal dibatalkan dan data dimuat ulang penuh.
+- **Buka cepat** (`src/cache.js`): data terakhir per pengguna Telegram ditampilkan dulu, lalu disegarkan di
+  belakang layar. Tanpa cache, `me` dan data awal diminta bersamaan.
+- **Render**: kartu yang tidak berubah dipakai ulang (`memo` di `views/shared.js`) dan kartu di luar layar
+  tidak dihitung layout-nya (`content-visibility`). Dengan 300 barang pada CPU lambat (throttle 6x), satu
+  centang turun dari ±1–2 detik menjadi ±0,25 detik, belum termasuk jaringan yang kini tidak ditunggu.
+
+Yang tetap menunggu server: data awal pertama kali, aksi di modul Nota/PNL/HPP/Supplier, Setor, dan Setujui/Tolak.
+Berkas offline (`berkah-offline.html`) tetap yang tercepat karena tanpa jaringan sama sekali.
 
 ## Mode offline (satu file `.html`)
 

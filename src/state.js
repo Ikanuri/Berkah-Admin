@@ -25,13 +25,28 @@ export function createState() {
 // tabel -> nama kolom kunci
 const TABLES = { categories: 'id', items: 'id', suppliers: 'id', priceLog: 'id', remRecurring: 'supplierId', remOneoff: 'id', workerItems: 'id', receipts: 'id' };
 
-// Terapkan balasan getChanges. Mengembalikan true bila ada baris yang berubah.
+const sameRow = (a, b) => {
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (k === 'updatedAt') continue;
+    const x = a[k], y = b[k];
+    if (x !== y && (typeof x !== 'object' || typeof y !== 'object' || JSON.stringify(x) !== JSON.stringify(y))) return false;
+  }
+  return true;
+};
+
+// Terapkan balasan getChanges. Mengembalikan true bila ada baris yang BERISI berbeda (baris yang
+// sama persis dengan tampilan optimistic hanya diperbarui diam-diam, tanpa render ulang).
 export function applyChanges(state, delta) {
   let changed = false;
   for (const [key, idField] of Object.entries(TABLES)) {
     for (const row of delta[key] || []) {
       const cur = state[key].get(row[idField]);
-      if (!cur || row.updatedAt >= cur.updatedAt) { state[key].set(row[idField], row); changed = true; }
+      if (!cur || row.updatedAt >= cur.updatedAt) {
+        state[key].set(row[idField], row);
+        if (!cur || !sameRow(cur, row)) changed = true;
+      }
     }
   }
   if (delta.alerts?.length) { state.alerts.push(...delta.alerts); changed = true; }
