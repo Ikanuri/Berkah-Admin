@@ -4,5 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "node tests/run-all.js"
+  },
+  "devDependencies": {
+    "@tgcloud/cli": "0.2.0"
   }
 }

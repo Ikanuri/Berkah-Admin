@@ -1,0 +1,80 @@
+name: Deploy
+
+# Satu-satunya jalur deploy. CI tidak punya snapshot lokal, jadi `push --force`
+# dipakai dan `concurrency` menjaga agar tidak ada dua deploy bersamaan.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+      BOSS_IDS: ${{ secrets.BOSS_IDS }}
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Cek secret
+        run: |
+          [ -n "$TGCLOUD_TOKEN" ] || { echo "::error::Secret TGCLOUD_TOKEN belum diisi"; exit 1; }
+          node scripts/ci/gen-boss-ids.mjs
+
+      - name: Build frontend (jika ada)
+        run: npm run build --if-present
+
+      - name: Skema DB, tampilkan perubahan
+        run: npx tgcloud migrate --local --dry-run
+
+      - name: Skema DB, terapkan perubahan aman
+        run: npx tgcloud migrate --local --safe
+
+      - name: Skema DB, pastikan tidak ada yang tertinggal
+        run: |
+          out=$(npx tgcloud migrate --local --dry-run)
+          echo "$out"
+          if ! grep -q "No schema changes" <<<"$out"; then
+            echo "::error::Ada perubahan skema yang butuh persetujuan manual (hapus/ubah tipe). Jalankan 'npx tgcloud migrate' di terminal sendiri, lalu jalankan ulang workflow."
+            exit 1
+          fi
+
+      - name: Deploy kode
+        run: npx tgcloud push --force
+
+      - name: Diagnosa pasca-deploy
+        run: scripts/ci/diagnose.sh
+
+      - name: Unggah laporan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnose-report
+          path: diagnose-report.md
+          if-no-files-found: ignore

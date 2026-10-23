@@ -1,0 +1,70 @@
+name: Diagnosa
+
+# Cek kesehatan berkala tanpa deploy. Gagal -> issue berlabel "diagnosa".
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+      BOSS_IDS: ${{ secrets.BOSS_IDS }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Siapkan konfigurasi sama seperti deploy
+        run: node scripts/ci/gen-boss-ids.mjs
+
+      - name: Diagnosa
+        id: diag
+        run: scripts/ci/diagnose.sh
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diagnose-report
+          path: diagnose-report.md
+          if-no-files-found: ignore
+
+      - name: Buat atau perbarui issue bila gagal
+        if: steps.diag.outcome == 'failure'
+        run: |
+          gh label create diagnosa --color B60205 --description "Diagnosa otomatis gagal" 2>/dev/null || true
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body=$(printf 'Diagnosa gagal. Laporan: %s\n\n%s' "$url" "$(head -c 6000 diagnose-report.md 2>/dev/null)")
+          num=$(gh issue list --label diagnosa --state open --json number --jq '.[0].number // empty')
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body "$body"
+          else
+            gh issue create --title "Diagnosa tgcloud gagal" --label diagnosa --body "$body"
+          fi
+
+      - name: Tutup issue bila sudah pulih
+        if: steps.diag.outcome == 'success'
+        run: |
+          for n in $(gh issue list --label diagnosa --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Pulih: diagnosa lulus ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          done
+
+      - name: Gagalkan job bila diagnosa gagal
+        if: steps.diag.outcome == 'failure'
+        run: exit 1

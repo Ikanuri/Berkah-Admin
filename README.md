@@ -10,15 +10,38 @@ V1 backend (belum ada frontend, belum pernah di-deploy):
 - `tgcloud/schema.js`: users, categories, items, suppliers, price_log, activity_log
 - `tgcloud/lib/`: `money`, `tier`, `rules`, `shape` (permission), `auth`, `store`, `config`
 - `tgcloud/endpoints/`: 21 endpoint (stok, HPP, supplier, pengguna, `getChanges` untuk polling)
-- `tests/`: uji lib murni dan cek sintaks (`npm test`)
+- `tests/`: uji lib murni, skrip CI, dan cek sintaks (`npm test`)
 
 Belum ada: frontend (Vite), export/restore/import backup, pengingat (V2), Nota (V3), PNL (V4).
 
-## Sebelum deploy pertama
+## Deploy otomatis (GitHub Actions)
 
-1. Isi `BOSS_IDS` di `tgcloud/lib/config.js` dengan telegram_user_id pemilik.
-2. Buat bot di @BotFather, aktifkan Serverless, `npx tgcloud login` (interaktif).
-3. `npx tgcloud migrate` lalu `npx tgcloud push`. Kode dan skema dideploy terpisah.
+Satu kali, oleh pemilik (tidak bisa diotomasi):
+
+1. Buat bot di @BotFather, aktifkan toggle Serverless, ambil token CLI.
+2. Di repo GitHub: Settings > Secrets and variables > Actions, tambah dua secret:
+   - `TGCLOUD_TOKEN`: token CLI (format `app<id>:<secret>`)
+   - `BOSS_IDS`: telegram_user_id Bos, dipisah koma, mis. `123456789,987654321`
+3. (Opsional) Settings > Environments > `production` > tambah required reviewer
+   kalau mau persetujuan manual sebelum deploy.
+
+Sesudah itu semuanya otomatis:
+
+| Workflow | Kapan | Isi |
+|---|---|---|
+| `ci.yml` | PR / push non-main | `npm test` |
+| `deploy.yml` | push ke `main` / manual | test, tulis `BOSS_IDS` ke `boss-ids.js`, `migrate --safe`, `push --force`, diagnosa |
+| `diagnose.yml` | tiap 6 jam / manual | status, webhook, skema, smoke endpoint; gagal membuat issue berlabel `diagnosa`, pulih menutupnya |
+
+Catatan:
+- Runtime tgcloud tidak punya secret/env yang terdokumentasi, jadi `BOSS_IDS` disuntikkan
+  ke kode saat deploy (`scripts/ci/gen-boss-ids.mjs`). `tgcloud/lib/boss-ids.js` di repo
+  hanya placeholder; jangan commit isi aslinya.
+- Perubahan skema yang destruktif (hapus kolom, ubah tipe) tidak diterapkan otomatis.
+  Deploy gagal dengan pesan jelas; jalankan `npx tgcloud migrate` di terminal sendiri.
+- `push --force` dipakai karena CI tidak punya snapshot lokal; jangan deploy manual
+  bersamaan dengan CI.
+- Smoke test hanya membaca (`me`, `getChanges`) memakai identitas Bos pertama.
 
 ## Dokumen
 
