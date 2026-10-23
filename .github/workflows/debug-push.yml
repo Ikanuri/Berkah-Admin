@@ -1,0 +1,36 @@
+name: Debug push (sementara)
+
+# SEMENTARA: mencari modul mana yang dikembalikan server sebagai false.
+# Tanpa BOSS_IDS asli (boss-ids.js tetap placeholder). Hapus setelah selesai.
+on:
+  push:
+    branches: [claude/new-session-316ei8]
+    paths: [".github/workflows/debug-push.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Push dengan --debug, ringkas hasil
+        run: |
+          npx tgcloud push --force --debug > out.txt 2>&1 || true
+          echo "== ukuran log: $(wc -c < out.txt) byte"
+          echo "== entri bernilai false:"
+          grep -oE '"[A-Za-z0-9_/.-]+": *false' out.txt | sort | uniq -c | head -30
+          echo "== baris HTTP (dipotong 200 char):"
+          grep -nE 'HTTP|POST|GET|status' out.txt | cut -c1-200 | head -20
+          echo "== sekitar canonical_modules (dipotong 400 char):"
+          grep -n 'canonical_modules' out.txt | cut -c1-400 | head -5
