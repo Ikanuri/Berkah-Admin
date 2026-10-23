@@ -52,6 +52,13 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      # Versi offline satu berkas: ikut dilayani dari host Mini App (dist/berkah-offline.html)
+      # dan diunggah sebagai artifact supaya bisa disimpan di perangkat.
+      - name: Build versi offline (satu file .html)
+        run: |
+          npm run build:offline
+          cp dist-offline/berkah-offline.html dist/berkah-offline.html
+
       - name: Tulis boss-ids.js dari secret
         run: node scripts/ci/gen-boss-ids.mjs
 
@@ -123,6 +130,14 @@ jobs:
 
       - name: Diagnosa pasca-deploy
         run: scripts/ci/diagnose.sh
+
+      - name: Unggah versi offline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: berkah-offline
+          path: dist-offline/berkah-offline.html
+          if-no-files-found: ignore
 
       - name: Unggah laporan
         if: always()

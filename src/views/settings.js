@@ -1,5 +1,5 @@
 import { h, openModal, toast } from '../dom.js';
-import { call } from '../api.js';
+import { call, mode } from '../api.js';
 import { themePref, setTheme } from '../theme.js';
 import { prefs } from '../prefs.js';
 import { exportBackup, pickRestoreFile } from './backup.js';
@@ -42,8 +42,17 @@ async function usersSection(ctx, box) {
   box.replaceChildren(...[pending ? h('div', { class: 'alert alert-warn' }, `${pending} orang menunggu persetujuan`) : null, ...rows].filter(Boolean));
 }
 
+// Berkas dilayani dari host yang sama. Di WebView Telegram unduhan blob/berkas tidak andal,
+// jadi dibuka di browser luar (dari sana bisa "Simpan halaman").
+function openOffline() {
+  const url = new URL('berkah-offline.html', location.href).href;
+  const tg = window.Telegram?.WebApp;
+  if (tg?.openLink) tg.openLink(url); else window.open(url, '_blank');
+}
+
 export function openSettings(ctx) {
   const me = ctx.state.me;
+  const showUsers = ctx.isBoss && mode().kind !== 'offline'; // offline = satu pengguna
   const box = h('div', {});
   const body = h('div', {},
     h('div', { class: 'set-row' }, h('div', { class: 'set-label' }, 'Akun'),
@@ -60,7 +69,11 @@ export function openSettings(ctx) {
       h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;' },
         h('button', { class: 'btn sm', onclick: exportBackup }, '⬇ Backup'),
         h('button', { class: 'btn sm', onclick: () => pickRestoreFile(ctx) }, '⬆ Restore'))) : null,
-    ctx.isBoss ? h('div', { style: 'margin-top:14px;' }, h('div', { class: 'field-label', style: 'margin-bottom:6px;' }, 'Pengguna'), box) : null);
+    mode().kind === 'telegram' ? h('div', { class: 'set-row', style: 'flex-direction:column;align-items:flex-start;' },
+      h('div', { class: 'set-label' }, 'Versi offline'),
+      h('div', { class: 'set-sub', style: 'margin:0;' }, 'Satu file .html yang berjalan sendiri tanpa Telegram dan tanpa server (data di perangkat itu). Cadangan bila Telegram sedang gangguan. Backup dari app ini bisa direstore ke sana, dan sebaliknya.'),
+      h('button', { class: 'btn sm', onclick: openOffline }, '⬇ Buka berkah-offline.html')) : null,
+    showUsers ? h('div', { style: 'margin-top:14px;' }, h('div', { class: 'field-label', style: 'margin-bottom:6px;' }, 'Pengguna'), box) : null);
   openModal({ title: 'Pengaturan', body });
-  if (ctx.isBoss) usersSection(ctx, box);
+  if (showUsers) usersSection(ctx, box);
 }

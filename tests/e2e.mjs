@@ -1,6 +1,7 @@
 // E2E frontend di Chromium sungguhan, backend LocalStore (?dev=...).
 // Jalankan: npm run build && CHROME_BIN=... npm run e2e   (tidak ikut `npm test`: butuh browser)
 import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
 
@@ -257,6 +258,8 @@ await step('Bos: pengingat supplier (mingguan, sekali-jadwal, spanduk, hapus, pe
   await page.waitForFunction(() => document.getElementById('toast')?.textContent.includes('Pilih minimal satu hari'));
   await page.click('.modal-foot .btn.sm:text-is("Batal")');
   // sekali-jadwal untuk Agen B pada menit WIB saat ini -> berbunyi saat tick berikutnya
+  // menit WIB dipotong ke awal menit: hindari dekat pergantian menit supaya tak kena batas "waktu sudah lewat" 60 dtk
+  while (new Date().getSeconds() > 25) await wait(1000);
   const wibNow = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16);
   await page.click('#once-add');
   await page.selectOption('.modal select', { label: 'Agen B' });
@@ -455,6 +458,46 @@ await step('Menunggu persetujuan untuk peran pending', async () => {
   await page.goto(BASE + '?dev=pending');
   await page.waitForSelector('.center-screen');
   assert.match(await page.textContent('.center-screen'), /Menunggu persetujuan/);
+});
+
+await step('Offline: satu file .html jalan tanpa server/Telegram, data bertahan, backup terunduh', async () => {
+  const file = new URL('../dist-offline/berkah-offline.html', import.meta.url);
+  assert.ok(existsSync(file), 'jalankan `npm run build:offline` dulu');
+  const reqs = [];
+  const onReq = (r) => reqs.push(r.url());
+  page.on('request', onReq);
+  await page.goto(file.href);
+  await page.waitForSelector('#offline-banner');
+  assert.match(await page.textContent('.badge-boss'), /Mode Bos/);
+  await page.click('.cat-tab-add');
+  await modalOk('Offline');
+  await page.waitForSelector('.cat-tab.active');
+  await page.fill('[data-keep=add]', '3 dus Teh\n2 kg Gula');
+  await page.click('text=+ Tambah');
+  await page.waitForFunction(() => document.querySelectorAll('.item-card').length === 2);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll('.item-card').length === 2);
+  // modul Nota dan PNL tersedia, bekerja lewat penyimpanan lokal
+  await page.click('.mod-tab[data-mod=pnl]');
+  await page.fill('#pn-raw', '#tanggal 2026-06-01\n#income 1000\n#kulakan 400\n#cash 700');
+  await page.click('#pn-process-btn');
+  await page.waitForSelector('#pn-tbl-harian');
+  await page.click('.mod-tab[data-mod=stok]');
+  await page.click('.icon-btn[title="Pengaturan"]');
+  await page.waitForSelector('.overlay .modal');
+  const txt = await page.textContent('.overlay .modal');
+  assert.match(txt, /Backup & Restore/);
+  assert.doesNotMatch(txt, /Pengguna|Versi offline/, 'offline = satu pengguna, tanpa tautan versi offline');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.btn:text("⬇ Backup")')]);
+  const data = JSON.parse(readFileSync(await dl.path(), 'utf8'));
+  assert.equal(data.app, 'berkah-mini');
+  assert.equal(data.tables.items.length, 2);
+  assert.ok(data.tables.pnl.days['2026-06-01']);
+  page.off('request', onReq);
+  const external = reqs.filter((u) => !u.startsWith('file:') && !u.startsWith('data:') && !u.startsWith('blob:') && !/fonts\.g(oogleapis|static)\.com/.test(u));
+  assert.deepEqual(external, [], 'tidak ada permintaan jaringan selain font');
+  assert.ok(!reqs.some((u) => /telegram\.org/.test(u)), 'tidak memuat skrip Telegram');
+  await shot('11-offline');
 });
 
 await step('tidak ada error konsol/halaman', async () => {

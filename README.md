@@ -25,7 +25,20 @@ Inter / JetBrains Mono, topbar, panel, kartu barang, pil sub-navigasi, tabel, mo
 Belum diport dari UI lama: panel Balasan/Log (digantikan "Terima" per barang), Export Excel,
 donut ringkasan Supplier, seekbar, bottom-nav, laporan PDF berbagan grafik (diganti laporan cetak sederhana).
 
-Belum ada: mode offline satu file `.html` (arsitektur adapter sudah siap: `LocalStore` di `src/local-store.js`).
+## Mode offline (satu file `.html`)
+
+Cadangan bila Telegram atau server sedang gangguan: satu berkas yang berjalan sendiri di browser,
+tanpa Telegram dan tanpa server. Datanya tersimpan di perangkat itu (localStorage), satu pengguna (Bos),
+semua modul (Stok, HPP, Supplier, Pengingat, Nota, PNL, Backup) dan logika bisnis yang sama (lib murni dan
+`LocalStore`).
+
+- Build: `npm run build:offline` menghasilkan `dist-offline/berkah-offline.html` (JS + CSS di dalam).
+- Deploy otomatis menyalinnya ke `dist/berkah-offline.html` (dilayani di host Mini App; tombol "Versi offline" di Pengaturan)
+  dan mengunggahnya sebagai artifact `berkah-offline` pada run Deploy.
+- Tukar data dengan versi online lewat Backup/Restore (format sama, termasuk Nota dan PNL). Data offline TIDAK tersinkron
+  otomatis; restore memakai merge dengan preview, jadi aman dilakukan berulang.
+- Pengingat supplier hanya berbunyi (spanduk di app) selama berkas offline terbuka; tidak ada pesan Telegram.
+- Font memakai Google Fonts bila ada koneksi; tanpa koneksi dipakai font sistem.
 
 ## Menjalankan frontend secara lokal
 

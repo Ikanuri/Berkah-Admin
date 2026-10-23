@@ -2,3 +2,4 @@ node_modules/
 .tgcloud/
 dist/
 tests/shot-*.png
+dist-offline/

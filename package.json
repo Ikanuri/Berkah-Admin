@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node tests/run-all.js",
-    "e2e": "node tests/e2e.mjs"
+    "e2e": "node tests/e2e.mjs",
+    "build:offline": "vite build --mode offline"
   },
   "devDependencies": {
     "@tgcloud/cli": "0.2.0",

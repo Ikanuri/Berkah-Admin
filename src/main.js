@@ -50,6 +50,7 @@ function shell() {
       h('div', { class: 'srb-msg' }, state.alerts.join('\n')),
       h('button', { class: 'srb-close', onclick: () => { state.alerts.length = 0; render(); } }, 'Tutup')) : null,
     m.kind === 'dev' ? h('div', { class: 'dev-banner' }, `MODE DEV · data lokal browser · peran: ${m.role}`) : null,
+    m.kind === 'offline' ? h('div', { class: 'dev-banner', id: 'offline-banner' }, 'MODE OFFLINE · data tersimpan di browser perangkat ini · tukar data dengan versi online lewat Backup/Restore') : null,
     h('div', { class: 'topbar' }, h('div', { class: 'topbar-inner' },
       h('div', { class: 'brand', title: 'Toko Berkah' },
         h('span', { class: 'brand-mark' }, '✳'),

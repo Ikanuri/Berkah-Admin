@@ -19,15 +19,18 @@ import { processRaw, arsipOf, canonDate } from '../tgcloud/lib/pnl.js';
 import { parseProductsCSV } from '../tgcloud/lib/match.js';
 import { validateRecurring, validateOneOff, initialFired, planTick } from '../tgcloud/lib/reminders.js';
 
-const KEY = 'berkah-dev-db';
 const ME = 1;
 
 function fail(msg) { throw new Error(msg); }
 
 export class LocalStore {
-  constructor(role, storage = globalThis.localStorage) {
+  // opts.key: kunci penyimpanan; opts.seed=false: tanpa pengguna contoh (mode offline).
+  constructor(role, storage = globalThis.localStorage, { key = 'berkah-dev-db', seed = true } = {}) {
     this.storage = storage;
     this.role = role;
+    this.key = key;
+    this.seed = seed;
+    this.lastSaved = null;
     this.db = this.load();
     this.db.remRecurring ??= [];
     this.db.remOneoff ??= [];
@@ -36,20 +39,20 @@ export class LocalStore {
     this.db.nota ??= { products: [], version: 0, learn: [], hist: [], seq: 0 };
     const now = Date.now();
     this.db.users = this.db.users.filter((u) => u.tgId !== ME);
-    this.db.users.push({ tgId: ME, name: 'Anda (dev)', username: null, role, createdAt: now, updatedAt: now });
+    this.db.users.push({ tgId: ME, name: seed ? 'Anda (dev)' : 'Anda (offline)', username: null, role, createdAt: now, updatedAt: now });
     this.save();
   }
 
   load() {
     try {
-      const raw = this.storage?.getItem(KEY);
-      if (raw) return JSON.parse(raw);
+      const raw = this.storage?.getItem(this.key);
+      if (raw) { this.lastSaved = raw; return JSON.parse(raw); }
     } catch { /* abaikan */ }
     const now = Date.now();
     return {
       categories: [], items: [], suppliers: [], priceLog: [], activity: [], seq: { cat: 0, sup: 0 },
       remRecurring: [], remOneoff: [], sent: [], // sent: pesan yang akan dikirim ke Telegram (dev: hanya dicatat)
-      users: [
+      users: this.seed === false ? [] : [
         { tgId: 2, name: 'Siti (karyawan)', username: 'siti', role: 'worker', createdAt: now, updatedAt: now },
         { tgId: 3, name: 'Budi (menunggu)', username: null, role: 'pending', createdAt: now, updatedAt: now },
       ],
@@ -57,7 +60,12 @@ export class LocalStore {
   }
 
   save() {
-    try { this.storage?.setItem(KEY, JSON.stringify(this.db)); } catch { /* abaikan */ }
+    try {
+      const raw = JSON.stringify(this.db);
+      if (raw === this.lastSaved) return; // polling tanpa perubahan tidak menulis ulang database besar
+      this.storage?.setItem(this.key, raw);
+      this.lastSaved = raw;
+    } catch { /* abaikan */ }
   }
 
   need(...roles) {
